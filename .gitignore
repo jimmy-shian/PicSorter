@@ -13,6 +13,7 @@ expo-env.d.ts
 .kotlin/
 *.orig.*
 *.jks
+*.keystore
 *.p8
 *.p12
 *.key
@@ -30,8 +31,25 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
+# local env files (never commit secrets)
+.env
 .env*.local
+
+# Android signing & build outputs
+*.apk
+*.aab
+local.properties
+
+# Gradle cache
+.gradle/
+
+# IDE / OS
+.idea/
+Thumbs.db
+
+# logs
+*.log
+logs/
 
 # typescript
 *.tsbuildinfo
@@ -39,3 +57,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# local native module build outputs (./gradlew assembleRelease 產物，不進版本控制)
+modules/pic-sorter-trash/android/build/
