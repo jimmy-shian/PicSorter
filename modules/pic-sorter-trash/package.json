@@ -1,0 +1,8 @@
+{
+  "name": "pic-sorter-trash",
+  "version": "1.0.0",
+  "description": "System trash (MediaStore.createTrashRequest) for PicSorter on Android.",
+  "main": "index.ts",
+  "types": "index.ts",
+  "license": "MIT"
+}
