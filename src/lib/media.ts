@@ -20,34 +20,175 @@ export function isLimitedAccess(resp: PermissionResponse | null): boolean {
   return resp?.accessPrivileges === 'limited';
 }
 
-/** 頂部來源相簿清單：「所有照片」+ 系統/使用者相簿 */
-export async function listSourceAlbums(): Promise<SourceAlbum[]> {
+/**
+ * 根目錄 DCIM / DICM 判斷：
+ * 在三星及 Android 系統中，DCIM 為儲存相片與影片的根目錄（如 /sdcard/DCIM/），
+ * 真正的相簿（如 Camera/相機、Screenshots/螢幕截圖 等）位於其內部子資料夾。
+ * 若系統 MediaStore 回傳標題為 DCIM 或 DICM 本身，不可將其視為單一相簿資料夾，
+ * 否則抓取只會抓到根目錄散落檔案，無法看到內部相簿的全部相片與影片。
+ */
+export function isRootDcim(title: string | null | undefined): boolean {
+  if (!title) return false;
+  return /^dci?m$/i.test(title.trim());
+}
+
+/**
+ * 常見媒體相簿判斷（輔助優先排序用，不再用於過濾阻擋使用者相簿）
+ */
+const COMMON_MEDIA_ALBUMS =
+  /camera|相機|膠卷|screenshot|screen.?shot|screen.?record|螢幕錄影|錄影|截圖|pictures?|照片|圖片|download|下載|video|影片/i;
+
+export function isCommonMediaAlbum(title: string): boolean {
+  const trimmed = title.trim();
+  if (isRootDcim(trimmed)) return false;
+  return COMMON_MEDIA_ALBUMS.test(trimmed);
+}
+
+/** 頂部來源相簿清單：「所有相片與影片」+ 系統/使用者相簿（包含 DCIM 內全部子資料夾與媒體相簿） */
+export async function listSourceAlbums(_showAll?: boolean): Promise<SourceAlbum[]> {
   const albums = await Album.getAll();
-  const out: SourceAlbum[] = [{ id: null, title: '所有照片' }];
-  for (const album of albums) {
-    const title = await album.getTitle();
-    out.push({ id: album.id, title });
+  const withTitles = await Promise.all(
+    albums.map(async (album) => {
+      try {
+        const title = await album.getTitle();
+        return { album, title };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  // 「所有相片與影片」放在首位，代表全機與 DCIM 內全部相片與影片
+  const out: SourceAlbum[] = [{ id: null, title: '所有相片與影片' }];
+  const candidates = (withTitles.filter((x) => x !== null) as { album: Album; title: string }[]).filter(
+    ({ title }) => {
+      const trimmed = title.trim();
+      return trimmed.length > 0 && !isRootDcim(trimmed);
+    },
+  );
+  const checks = await Promise.all(
+    candidates.map(async ({ album, title }) => {
+      const trimmed = title.trim();
+      // 純語音/錄音/音樂資料夾若沒有照片/影片才排除，其餘相簿一律保留
+      if (/voice|recorder|music|錄音|音樂|audio|播客|podcast/i.test(trimmed)) {
+        const keep = await albumHasMedia(album.id);
+        if (!keep) return null;
+      }
+      return { id: album.id, title: trimmed };
+    }),
+  );
+  for (const c of checks) {
+    if (c) out.push(c);
   }
-  // 常見來源優先：相機、螢幕截圖（若存在）
-  const priority = ['相機', 'Camera', '相機膠卷', '螢幕截圖', 'Screenshots'];
+  // 常見來源優先：相機、螢幕截圖、螢幕錄影、圖片、下載等，其餘依名稱排序（如 DCIM 內全部使用者相簿）
+  const priority = [
+    '相機',
+    'Camera',
+    '相機膠卷',
+    '螢幕截圖',
+    'Screenshots',
+    'Screens',
+    '截圖',
+    '螢幕錄影',
+    'Screen recordings',
+    'Videos',
+    '影片',
+    'Pictures',
+    '照片',
+    '圖片',
+    'Download',
+    '下載',
+  ];
   out.sort((a, b) => {
     if (a.id === null) return -1;
     if (b.id === null) return 1;
-    const ai = priority.findIndex((p) => a.title.includes(p));
-    const bi = priority.findIndex((p) => b.title.includes(p));
+    const ai = priority.findIndex((p) => a.title.toLowerCase().includes(p.toLowerCase()));
+    const bi = priority.findIndex((p) => b.title.toLowerCase().includes(p.toLowerCase()));
     if (ai !== -1 || bi !== -1) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
     return a.title.localeCompare(b.title, 'zh-Hant');
   });
   return out;
 }
 
-/** 底部目標相簿：排除目前來源相簿本身，避免「整理卻沒動」的誤解 */
-export async function listTargetAlbums(excludeAlbumId: string | null): Promise<TargetAlbum[]> {
+/** 系統智慧相簿（不可作為分類目標）：最近刪除/垃圾桶/已隱藏等，加入會失敗 */
+const NON_WRITABLE_TARGET = /最近刪除|recently deleted|垃圾桶|^trash$|已隱藏|^hidden$|已封存/i;
+
+/** 單一相簿是否至少含一張照片或影片；失敗時 fail-open（保留），避免整列消失 */
+export async function albumHasMedia(albumId: string): Promise<boolean> {
+  try {
+    const assets = await new Query()
+      .album(new Album(albumId))
+      .within(AssetField.MEDIA_TYPE, [MediaType.IMAGE, MediaType.VIDEO])
+      .limit(1)
+      .exe();
+    return assets.length > 0;
+  } catch {
+    return true;
+  }
+}
+export const albumHasImages = albumHasMedia;
+
+/** 下滑查看用：這張照片目前被系統放在哪些相簿裡（Android 通常只有一個） */
+export async function getAssetAlbumTitles(assetId: string): Promise<string[]> {
+  try {
+    const asset = new Asset(assetId);
+    const albums = await asset.getAlbums();
+    const titles = await Promise.all(
+      albums.map(async (a) => {
+        try {
+          return await a.getTitle();
+        } catch {
+          return null;
+        }
+      }),
+    );
+    // 排除 DCIM 根目錄本身
+    return titles.filter((t): t is string => !!t && t.trim().length > 0 && !isRootDcim(t));
+  } catch {
+    return [];
+  }
+}
+
+/** 底部目標相簿：排除目前來源相簿本身與 DCIM 根目錄，包含手機中所有相簿（DCIM 內子資料夾與使用者相簿） */
+export async function listTargetAlbums(
+  excludeAlbumId: string | null,
+  _showAll?: boolean,
+): Promise<TargetAlbum[]> {
   const albums = await Album.getAll();
+  const withTitles = await Promise.all(
+    albums.map(async (album) => {
+      try {
+        if (excludeAlbumId !== null && album.id === excludeAlbumId) return null;
+        const title = await album.getTitle();
+        return { album, title };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const candidates = (withTitles.filter((x) => x !== null) as { album: Album; title: string }[]).filter(
+    ({ title }) => {
+      const trimmed = title.trim();
+      return (
+        trimmed.length > 0 &&
+        !isRootDcim(trimmed) && // 排除 DCIM 根目錄本身
+        !NON_WRITABLE_TARGET.test(trimmed)
+      );
+    },
+  );
+  const checks = await Promise.all(
+    candidates.map(async ({ album, title }) => {
+      const trimmed = title.trim();
+      // 只有明確是純音訊資料夾才排除，其餘相簿一律保留
+      if (/voice|recorder|music|錄音|音樂|audio|播客|podcast/i.test(trimmed)) {
+        const keep = await albumHasMedia(album.id);
+        if (!keep) return null;
+      }
+      return { id: album.id, title: trimmed };
+    }),
+  );
   const out: TargetAlbum[] = [];
-  for (const album of albums) {
-    if (excludeAlbumId !== null && album.id === excludeAlbumId) continue;
-    out.push({ id: album.id, title: await album.getTitle() });
+  for (const c of checks) {
+    if (c) out.push(c);
   }
   return out;
 }
@@ -65,7 +206,7 @@ export interface PhotoPage {
 const PAGE_SIZE = 30;
 
 /**
- * 分頁讀取照片。SDK 57 新 API 以 Query + orderBy 取代舊 getAssetsAsync。
+ * 分頁讀取相片與影片。SDK 57 新 API 以 Query + orderBy 取代舊 getAssetsAsync。
  * 注意：offset 需由呼叫端累加；已分類過的 assetId 由 session 層過濾。
  */
 export async function getPhotoPage(
@@ -75,7 +216,7 @@ export async function getPhotoPage(
   limit: number = PAGE_SIZE,
 ): Promise<PhotoPage> {
   let query = new Query()
-    .eq(AssetField.MEDIA_TYPE, MediaType.IMAGE)
+    .within(AssetField.MEDIA_TYPE, [MediaType.IMAGE, MediaType.VIDEO])
     .orderBy({ key: AssetField.CREATION_TIME, ascending: sortOrder === 'oldest' })
     .limit(limit)
     .offset(offset);
@@ -86,31 +227,53 @@ export async function getPhotoPage(
   const assets: Asset[] = await query.exe();
   const items: ClassifyItem[] = [];
   for (const asset of assets) {
-    const [uri, width, height, creationTime] = await Promise.all([
-      asset.getUri(),
-      asset.getWidth(),
-      asset.getHeight(),
-      asset.getCreationTime(),
+    const [uri, width, height, creationTime, mediaType, duration] = await Promise.all([
+      asset.getUri().catch(() => ''),
+      asset.getWidth().catch(() => 0),
+      asset.getHeight().catch(() => 0),
+      asset.getCreationTime().catch(() => null),
+      asset.getMediaType().catch(() => MediaType.IMAGE),
+      asset.getDuration().catch(() => 0),
     ]);
-    items.push({ assetId: asset.id, uri, width, height, creationTime });
+    if (!uri) continue;
+    items.push({
+      assetId: asset.id,
+      uri,
+      width,
+      height,
+      creationTime,
+      mediaType: mediaType === MediaType.VIDEO ? 'video' : 'image',
+      duration: duration ?? 0,
+    });
   }
   return { items, hasMore: assets.length >= limit };
 }
 
 /**
- * 依系統照片識別碼取回單張（P3 撤銷恢復用：被撤銷的照片可能不在目前 queue）。
+ * 依系統識別碼取回單張（P3 撤銷恢復用：被撤銷的照片可能不在目前 queue）。
  * 讀不到（如系統中已刪除）回傳 null，呼叫端應視為單純取消決定。
  */
 export async function getItemById(assetId: string): Promise<ClassifyItem | null> {
   try {
     const asset = new Asset(assetId);
-    const [uri, width, height, creationTime] = await Promise.all([
-      asset.getUri(),
-      asset.getWidth(),
-      asset.getHeight(),
-      asset.getCreationTime(),
+    const [uri, width, height, creationTime, mediaType, duration] = await Promise.all([
+      asset.getUri().catch(() => ''),
+      asset.getWidth().catch(() => 0),
+      asset.getHeight().catch(() => 0),
+      asset.getCreationTime().catch(() => null),
+      asset.getMediaType().catch(() => MediaType.IMAGE),
+      asset.getDuration().catch(() => 0),
     ]);
-    return { assetId, uri, width, height, creationTime };
+    if (!uri) return null;
+    return {
+      assetId,
+      uri,
+      width,
+      height,
+      creationTime,
+      mediaType: mediaType === MediaType.VIDEO ? 'video' : 'image',
+      duration: duration ?? 0,
+    };
   } catch {
     return null;
   }

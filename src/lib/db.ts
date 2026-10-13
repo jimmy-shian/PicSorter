@@ -5,11 +5,15 @@ export const DATABASE_VERSION = 3;
 
 export async function migrateDbIfNeeded(db: SQLite.SQLiteDatabase) {
   const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
-  let version = row?.user_version ?? 0;
+  const version = row?.user_version ?? 0;
   if (version >= DATABASE_VERSION) return;
 
-  if (version === 0) {
-    await db.execAsync(`
+  // 啟動必經之路：任何遷移失敗都不能讓 App 白屏卡死。
+  // ALTER TABLE 在欄位已存在時會拋錯（例如舊版本升級中途被殺掉），
+  // 所以先查 PRAGMA table_info 再補欄位，做到冪等；最後一律寫 user_version。
+  try {
+    if (version === 0) {
+      await db.execAsync(`
       PRAGMA journal_mode = 'wal';
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY NOT NULL,
@@ -33,6 +37,7 @@ export async function migrateDbIfNeeded(db: SQLite.SQLiteDatabase) {
         uri TEXT,
         width INTEGER,
         height INTEGER,
+        last_error TEXT,
         UNIQUE(session_id, asset_id)
       );
       CREATE INDEX IF NOT EXISTS idx_decisions_session ON decisions(session_id);
@@ -48,23 +53,34 @@ export async function migrateDbIfNeeded(db: SQLite.SQLiteDatabase) {
         value TEXT NOT NULL
       );
     `);
-    version = 1;
+    } else {
+      // v0 建表已包含全部新欄位；只有老庫才需要逐版補欄
+      // v1 → v2：檢查網格需要縮圖，決定列加存顯示用 uri/尺寸（P5）
+      if (version <= 1) {
+        await addColumnIfMissing(db, 'decisions', 'uri', 'TEXT');
+        await addColumnIfMissing(db, 'decisions', 'width', 'INTEGER');
+        await addColumnIfMissing(db, 'decisions', 'height', 'INTEGER');
+      }
+      // v2 → v3：套用結果頁需要顯示失敗原因（P6）
+      if (version <= 2) {
+        await addColumnIfMissing(db, 'decisions', 'last_error', 'TEXT');
+      }
+    }
+  } finally {
+    await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);
   }
-  // v1 → v2：檢查網格需要縮圖，決定列加存顯示用 uri/尺寸（P5）
-  if (version === 1) {
-    await db.execAsync(`
-      ALTER TABLE decisions ADD COLUMN uri TEXT;
-      ALTER TABLE decisions ADD COLUMN width INTEGER;
-      ALTER TABLE decisions ADD COLUMN height INTEGER;
-    `);
-    version = 2;
-  }
-  // v2 → v3：套用結果頁需要顯示失敗原因（P6）
-  if (version === 2) {
-    await db.execAsync('ALTER TABLE decisions ADD COLUMN last_error TEXT;');
-    version = 3;
-  }
-  await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);
+}
+
+/** 冪等加欄：欄位已存在則跳過，避免升級中斷後重跑拋錯導致啟動白屏 */
+async function addColumnIfMissing(
+  db: SQLite.SQLiteDatabase,
+  table: string,
+  column: string,
+  type: string,
+): Promise<void> {
+  const rows = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
+  if (rows.some((r) => r.name === column)) return;
+  await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type};`);
 }
 
 export function newSessionId(): string {
@@ -158,4 +174,13 @@ export async function finishSession(db: SQLite.SQLiteDatabase, id: string): Prom
 /** 設定頁「清除整理紀錄」：清掉工作與決定，保留相簿排序與偏好 */
 export async function clearAllRecords(db: SQLite.SQLiteDatabase): Promise<void> {
   await db.execAsync('DELETE FROM decisions; DELETE FROM sessions;');
+}
+
+export async function getPref(db: SQLite.SQLiteDatabase, key: string, defaultValue: string = ''): Promise<string> {
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM prefs WHERE key = ?', key);
+  return row ? row.value : defaultValue;
+}
+
+export async function setPref(db: SQLite.SQLiteDatabase, key: string, value: string): Promise<void> {
+  await db.runAsync('INSERT INTO prefs (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, value);
 }

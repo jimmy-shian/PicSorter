@@ -59,7 +59,7 @@ export interface RunApplyOptions {
    * - 'permanent'：僅 Android 10 以下，UI 已做二次確認，走永久刪除
    * - 'skip'：trash 全部保留未套用
    */
-  requestTrashConfirm?: () => Promise<'trash' | 'permanent' | 'skip'>;
+  requestTrashConfirm?: (count: number) => Promise<'trash' | 'permanent' | 'skip'>;
 }
 
 function errText(e: unknown): string {
@@ -229,7 +229,7 @@ export async function runApplyPipeline(
   // ── 3+4. 垃圾桶閘門：先問人（自繪確認），再問 OS（系統同意框）──
   if (trashRows.length > 0) {
     report(done, total, 'trash', null);
-    const choice = opts.requestTrashConfirm ? await opts.requestTrashConfirm() : 'skip';
+    const choice = opts.requestTrashConfirm ? await opts.requestTrashConfirm(trashRows.length) : 'skip';
     if (choice !== 'skip' && !isCancelled()) {
       const ids = trashRows.map((r) => r.asset_id);
       try {

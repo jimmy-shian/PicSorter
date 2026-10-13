@@ -21,6 +21,8 @@ export interface ClassifyItem {
   width: number;
   height: number;
   creationTime: number | null;
+  mediaType?: 'image' | 'video';
+  duration?: number;
 }
 
 export interface SessionSummary {
@@ -33,3 +35,7 @@ export interface SessionSummary {
 }
 
 export type ThemeMode = 'light' | 'dark' | 'system';
+
+export type GestureAction = 'album' | 'trash' | 'skip' | 'inspect' | 'none';
+export type GestureDirection = 'up' | 'down' | 'left' | 'right';
+export type GestureSettings = Record<GestureDirection, GestureAction>;
