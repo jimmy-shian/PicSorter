@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import {
-  Alert,
   Dimensions,
   FlatList,
   Modal,
@@ -14,6 +13,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Image } from 'expo-image';
 import { useSession } from '@/lib/session-context';
 import { useTheme } from '@/lib/theme';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { TargetAlbumSheet } from '@/components/TargetAlbumSheet';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -43,6 +43,7 @@ export default function ReviewDetailScreen() {
   const [zoomId, setZoomId] = useState<string | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [frozenNotice, setFrozenNotice] = useState(false);
 
   const items = useMemo<GridItem[]>(() => {
     const out: GridItem[] = [];
@@ -75,7 +76,7 @@ export default function ReviewDetailScreen() {
     // 已套用不可再改：只對未套用子集操作，全已套用則提示而不執行
     const pendingIds = ids.filter((id) => !session.decisions.get(id)?.applied);
     if (pendingIds.length === 0) {
-      Alert.alert('已套用，不可再修改', '這些照片已寫入系統，如需調整請到系統相簿操作。');
+      setFrozenNotice(true);
       return;
     }
     setBusy(true);
@@ -87,7 +88,7 @@ export default function ReviewDetailScreen() {
     }
   };
 
-  const ids = useMemo(() => [...selected], [selected]);
+  const ids = Array.from(selected);
 
   const openZoom = (item: GridItem) => {
     setZoomId(item.assetId);
@@ -115,7 +116,7 @@ export default function ReviewDetailScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: bg }]}>
+    <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={[styles.root, { backgroundColor: bg }]}>
       <View style={[styles.header, { borderColor: border }]}>
         <Pressable onPress={() => router.back()}>
           <Text style={[styles.back, { color: muted }]}>‹ 返回</Text>
@@ -179,6 +180,15 @@ export default function ReviewDetailScreen() {
         targets={session.targets}
         onPick={(targetId) => void run((pids) => session.updateDecisions(pids, { action: 'album', targetAlbumId: targetId }))}
         onClose={() => setSheetVisible(false)}
+      />
+
+      <ConfirmDialog
+        visible={frozenNotice}
+        title="已套用，不可再修改"
+        message="這些照片已寫入系統，如需調整請到系統相簿操作。"
+        confirmText="知道了"
+        onConfirm={() => setFrozenNotice(false)}
+        onCancel={() => setFrozenNotice(false)}
       />
 
       <Modal visible={zoomUri !== null} animationType="fade" onRequestClose={closeZoom}>

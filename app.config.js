@@ -53,6 +53,14 @@ module.exports = {
       'expo-sqlite',
       'expo-image',
       [
+        'expo-navigation-bar',
+        {
+          // 關閉系統半透明遮罩，讓按鈕顏色跟著 App 深淺主題走；
+          // edge-to-edge 下內容由 SafeArea 控制避開，不靠系統遮罩。
+          enforceContrast: false,
+        },
+      ],
+      [
         'expo-media-library',
         {
           photosPermission: 'Allow PicSorter to read your photos for local sorting.',

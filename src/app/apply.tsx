@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Image } from 'expo-image';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useSession } from '@/lib/session-context';
 import { useTheme } from '@/lib/theme';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { getApplySummary, type ApplyProgress, type ApplySummary } from '@/lib/apply';
 import { isSystemTrashAvailable } from '../../modules/pic-sorter-trash';
 
@@ -38,6 +39,11 @@ export default function ApplyScreen() {
   const [result, setResult] = useState<{ appliedAlbum: number; appliedTrash: number; pendingCount: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const cancelRef = useRef(false);
+  // App 內自訂確認框狀態：取代原生 Alert，樣式跟主題走。
+  // 管線跑到垃圾桶階段時 requestTrashConfirm 會顯示此框、等待使用者選擇；
+  // 之後 OS 還會有一次系統同意框（批次一次，無法移除，見下方說明）。
+  const [trashDialog, setTrashDialog] = useState<null | { step: 'first' | 'second'; count: number }>(null);
+  const trashResolver = useRef<((v: 'trash' | 'permanent' | 'skip') => void) | null>(null);
 
   const sessionId = session.sessionId;
 
@@ -47,55 +53,28 @@ export default function ApplyScreen() {
   }, [db, sessionId]);
 
   useEffect(() => {
-    void refreshSummary();
-  }, [refreshSummary]);
-
-  const requestTrashConfirm = useCallback((): Promise<'trash' | 'permanent' | 'skip'> => {
-    const trashCount = summary?.trashPending ?? 0;
-    if (Platform.OS === 'ios') {
-      return new Promise((resolve) => {
-        Alert.alert(
-          '確認移入最近刪除？',
-          `是否將這 ${trashCount} 張照片移到系統「最近刪除」？30 天內可在系統相簿中復原。`,
-          [
-            { text: '取消', style: 'cancel', onPress: () => resolve('skip') },
-            { text: '確認移入', style: 'default', onPress: () => resolve('trash') },
-          ],
-        );
-      });
-    }
-    if (isSystemTrashAvailable()) {
-      return new Promise((resolve) => {
-        Alert.alert(
-          '確認移入垃圾桶？',
-          `是否將這 ${trashCount} 張照片移到系統垃圾桶？之後可在系統相簿垃圾桶中復原或清空。`,
-          [
-            { text: '取消', style: 'cancel', onPress: () => resolve('skip') },
-            { text: '確認移入垃圾桶', style: 'default', onPress: () => resolve('trash') },
-          ],
-        );
-      });
-    }
-    // Android 10 以下：無系統垃圾桶，永久刪除＋二次確認
-    return new Promise((resolve) => {
-      Alert.alert(
-        '此系統沒有垃圾桶',
-        `確認將這 ${trashCount} 張照片永久刪除嗎？此動作無法復原。`,
-        [
-          { text: '取消', style: 'cancel', onPress: () => resolve('skip') },
-          {
-            text: '我了解，繼續',
-            style: 'destructive',
-            onPress: () =>
-              Alert.alert(`再次確認：永久刪除 ${trashCount} 張照片？`, '刪除後無法復原。', [
-                { text: '取消', style: 'cancel', onPress: () => resolve('skip') },
-                { text: '確認刪除', style: 'destructive', onPress: () => resolve('permanent') },
-              ]),
-          },
-        ],
-      );
+    let active = true;
+    if (!sessionId) return;
+    void getApplySummary(db, sessionId).then((res) => {
+      if (active) setSummary(res);
     });
-  }, [summary?.trashPending]);
+    return () => {
+      active = false;
+    };
+  }, [db, sessionId]);
+
+  const requestTrashConfirm = useCallback((count: number): Promise<'trash' | 'permanent' | 'skip'> => {
+    return new Promise((resolve) => {
+      trashResolver.current = resolve;
+      setTrashDialog({ step: 'first', count });
+    });
+  }, []);
+
+  const resolveTrash = useCallback((v: 'trash' | 'permanent' | 'skip') => {
+    setTrashDialog(null);
+    trashResolver.current?.(v);
+    trashResolver.current = null;
+  }, []);
 
   const handleStart = useCallback(async () => {
     if (!sessionId || busy) return;
@@ -121,9 +100,18 @@ export default function ApplyScreen() {
     void handleStart();
   }, [handleStart]);
 
+  /** 全部套用完成後的「完成」：開一筆乾淨新工作再返回，檢查頁才會是空的 */
+  const handleFinishAndFresh = useCallback(async () => {
+    try {
+      await session.restartFresh();
+    } finally {
+      router.replace('/');
+    }
+  }, [session]);
+
   if (!sessionId) {
     return (
-      <SafeAreaView style={[styles.center, { backgroundColor: bg }]}>
+      <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.center, { backgroundColor: bg }]}>
         <Text style={{ color: muted }}>沒有進行中的整理，請返回分類。</Text>
         <Pressable style={[styles.btn, { borderColor: border }]} onPress={() => router.back()}>
           <Text style={{ color: text }}>返回</Text>
@@ -132,20 +120,70 @@ export default function ApplyScreen() {
     );
   }
 
+  const trashCount = trashDialog?.count ?? summary?.trashPending ?? 0;
+  const trashFirstTitle =
+    Platform.OS === 'ios'
+      ? '確認移入最近刪除？'
+      : isSystemTrashAvailable()
+        ? '確認移入垃圾桶？'
+        : '此系統沒有垃圾桶';
+  const trashFirstMessage =
+    Platform.OS === 'ios'
+      ? `是否將這 ${trashCount} 張照片移到系統「最近刪除」？30 天內可在系統相簿中復原。之後系統還會再問一次（整批一次）。`
+      : isSystemTrashAvailable()
+        ? `是否將這 ${trashCount} 張照片移到系統垃圾桶？之後可在系統相簿垃圾桶中復原或清空。之後系統還會再問一次（整批一次）。`
+        : `確認將這 ${trashCount} 張照片永久刪除嗎？此動作無法復原（此系統沒有垃圾桶）。`;
+
+  const trashDialogs = (
+    <>
+      <ConfirmDialog
+        visible={stage === 'running' && trashDialog?.step === 'first'}
+        title={trashFirstTitle}
+        message={trashFirstMessage}
+        confirmText={
+          Platform.OS === 'ios'
+            ? '確認移入'
+            : isSystemTrashAvailable()
+              ? '確認移入垃圾桶'
+              : '我了解，繼續'
+        }
+        destructive={!isSystemTrashAvailable() && Platform.OS !== 'ios'}
+        onConfirm={() => {
+          // 舊機永久刪除要二次確認；其他直接放行，交給系統框做第二次確認
+          if (Platform.OS !== 'ios' && !isSystemTrashAvailable()) {
+            setTrashDialog((prev) => ({ step: 'second', count: prev?.count ?? trashCount }));
+          } else {
+            resolveTrash('trash');
+          }
+        }}
+        onCancel={() => resolveTrash('skip')}
+      />
+      <ConfirmDialog
+        visible={stage === 'running' && trashDialog?.step === 'second'}
+        title={`再次確認：永久刪除 ${trashCount} 張照片？`}
+        message="刪除後無法復原。"
+        confirmText="確認刪除"
+        destructive
+        onConfirm={() => resolveTrash('permanent')}
+        onCancel={() => resolveTrash('skip')}
+      />
+    </>
+  );
+
   // ── 確認摘要 ──
   if (stage === 'confirm') {
     const s = summary;
     const nothingPending = s !== null && s.pendingCount === 0;
     return (
-      <SafeAreaView style={[styles.root, { backgroundColor: bg }]}>
-        <ScrollView contentContainerStyle={styles.body}>
+      <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.root, { backgroundColor: bg }]}>
+        <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
           <Text style={[styles.title, { color: text }]}>最後確認</Text>
           {!s ? (
             <Text style={{ color: muted }}>讀取中…</Text>
           ) : nothingPending ? (
             <>
               <Text style={[styles.sub, { color: muted }]}>全部已套用，無待辦事項。</Text>
-              <Pressable style={[styles.primary, { backgroundColor: text }]} onPress={() => router.replace('/')}>
+              <Pressable style={[styles.primary, { backgroundColor: text }]} onPress={() => void handleFinishAndFresh()}>
                 <Text style={[styles.primaryText, { color: bg }]}>完成，返回分類</Text>
               </Pressable>
             </>
@@ -194,7 +232,7 @@ export default function ApplyScreen() {
           ? `正在加入${progress.label ? `「${progress.label}」` : '相簿'}…`
           : '正在處理待刪除照片…';
     return (
-      <SafeAreaView style={[styles.center, { backgroundColor: bg }]}>
+      <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.center, { backgroundColor: bg }]}>
         <Text style={[styles.title, { color: text }]}>套用中</Text>
         <Text style={[styles.sub, { color: muted }]}>
           {progress.done} / {progress.total}（{pct}%）
@@ -207,6 +245,7 @@ export default function ApplyScreen() {
         <Pressable style={[styles.ghost, styles.cancelBtn, { borderColor: border }]} onPress={() => { cancelRef.current = true; }}>
           <Text style={[styles.primaryText, { color: text }]}>取消</Text>
         </Pressable>
+        {trashDialogs}
       </SafeAreaView>
     );
   }
@@ -216,8 +255,8 @@ export default function ApplyScreen() {
   const pendingLeft = result?.pendingCount ?? s?.pendingCount ?? 0;
   const failed = s?.failedItems ?? [];
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: bg }]}>
-      <ScrollView contentContainerStyle={styles.body}>
+    <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.root, { backgroundColor: bg }]}>
+      <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <Text style={[styles.title, { color: text }]}>{pendingLeft === 0 ? '整理完成' : '套用中斷'}</Text>
         <View style={[styles.row, { borderColor: border, backgroundColor: card }]}>
           <Text style={[styles.rowTitle, { color: text }]}>已分類</Text>
@@ -254,7 +293,7 @@ export default function ApplyScreen() {
             <Text style={[styles.primaryText, { color: bg }]}>重試未完成（{pendingLeft}）</Text>
           </Pressable>
         ) : (
-          <Pressable style={[styles.primary, { backgroundColor: text }]} onPress={() => router.replace('/')}>
+          <Pressable style={[styles.primary, { backgroundColor: text }]} onPress={() => void handleFinishAndFresh()}>
             <Text style={[styles.primaryText, { color: bg }]}>完成，返回分類</Text>
           </Pressable>
         )}
@@ -268,7 +307,7 @@ export default function ApplyScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  body: { padding: 16, gap: 10 },
+  body: { padding: 16, gap: 10, paddingBottom: 32 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
   title: { fontSize: 20, fontWeight: '800' },
   sub: { fontSize: 13, marginBottom: 4, textAlign: 'center' },

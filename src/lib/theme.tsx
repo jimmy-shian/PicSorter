@@ -44,7 +44,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const palette = dark ? DARK : LIGHT;
   const value = useMemo<Theme>(
     () => ({ mode, dark, ...palette, setMode }),
-    [mode, dark],
+    [mode, dark, palette],
   );
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
