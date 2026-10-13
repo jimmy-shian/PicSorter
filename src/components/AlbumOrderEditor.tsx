@@ -43,8 +43,18 @@ export function AlbumOrderEditor({ visible, sourceId, onClose, onChanged }: Prop
 
   useEffect(() => {
     if (!visible) return;
-    setWorking(true);
-    reload().finally(() => setWorking(false));
+    let active = true;
+    void (async () => {
+      setWorking(true);
+      try {
+        await reload();
+      } finally {
+        if (active) setWorking(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
   }, [reload, visible]);
 
   const mutate = async (fn: () => Promise<void>) => {
@@ -115,8 +125,9 @@ export function AlbumOrderEditor({ visible, sourceId, onClose, onChanged }: Prop
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable style={[styles.sheet, { backgroundColor: bg, borderColor: border }]} onPress={() => {}}>
+          <View style={styles.handle} />
           <Text style={[styles.title, { color: text }]}>編輯相簿顯示順序</Text>
-          <Text style={[styles.sub, { color: muted }]}>只影響本 App 底部的顯示，不修改系統相簿</Text>
+          <Text style={[styles.sub, { color: muted }]}>只影響本 App 底部的顯示，不修改系統相簿 · 前 4 個會變成快捷圓鈕</Text>
           <ScrollView style={[styles.list, { backgroundColor: card }]}>
             {section('已固定（排最前）', pinned, 'pinned')}
             {section('一般', normal, 'normal')}
@@ -134,15 +145,23 @@ export function AlbumOrderEditor({ visible, sourceId, onClose, onChanged }: Prop
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
   sheet: {
-    maxHeight: '80%',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    height: '88%',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     borderTopWidth: 1,
     padding: 16,
   },
+  handle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#A8A29E',
+    marginBottom: 10,
+  },
   title: { fontSize: 16, fontWeight: '700' },
   sub: { fontSize: 12, marginTop: 2, marginBottom: 10 },
-  list: { borderRadius: 10, padding: 10, maxHeight: 420 },
+  list: { borderRadius: 10, padding: 10, flex: 1 },
   section: { marginBottom: 14 },
   sectionTitle: { fontSize: 12, marginBottom: 6 },
   emptyText: { fontSize: 13, paddingVertical: 4 },

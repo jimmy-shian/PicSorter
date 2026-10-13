@@ -1,4 +1,5 @@
-import { FlatList, Modal, Pressable, StyleSheet, Text } from 'react-native';
+import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/theme';
 import type { TargetAlbum } from '@/types';
 
@@ -13,10 +14,14 @@ interface Props {
 /** 檢查頁用：把選中的照片改放至其他目標相簿 */
 export function TargetAlbumSheet({ visible, title, targets, onPick, onClose }: Props) {
   const { bg, text, muted, border, card } = useTheme();
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={[styles.sheet, { backgroundColor: bg, borderColor: border }]} onPress={() => {}}>
+        <Pressable
+          style={[styles.sheet, { backgroundColor: bg, borderColor: border, paddingBottom: insets.bottom + 16 }]}
+          onPress={() => {}}>
+          <View style={styles.handle} />
           <Text style={[styles.title, { color: text }]}>{title}</Text>
           {targets.length === 0 ? (
             <Text style={[styles.empty, { color: muted }]}>沒有可用的目標相簿</Text>
@@ -48,11 +53,19 @@ export function TargetAlbumSheet({ visible, title, targets, onPick, onClose }: P
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
   sheet: {
-    maxHeight: '70%',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    maxHeight: '88%',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     borderTopWidth: 1,
     padding: 16,
+  },
+  handle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#A8A29E',
+    marginBottom: 10,
   },
   title: { fontSize: 16, fontWeight: '700', marginBottom: 12 },
   empty: { fontSize: 13, paddingVertical: 12, textAlign: 'center' },

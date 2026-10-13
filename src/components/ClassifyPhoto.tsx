@@ -13,17 +13,16 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme';
-import type { ClassifyItem } from '@/types';
+import type { ClassifyItem, GestureAction, GestureDirection, GestureSettings } from '@/types';
+import { ArrowCircle } from '@/components/GestureIcons';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
-/** 觸發門檻（px）：需大於手指誤觸，又不至於拖很遠 */
-const UP_THRESHOLD = -90;
-const TRASH_THRESHOLD = 95;
-const DROP_THRESHOLD = 110;
-/** 下拖超過此距離即進入「選擇目標」狀態，底部相簿顯示可放入提示 */
-const DROP_ARM = 45;
-const FLY_DISTANCE = 640;
+/** 觸發門檻（px） */
+const UP_THRESHOLD = -85;
+const DOWN_THRESHOLD = 85;
+const H_THRESHOLD = 90;
+const FLY_DISTANCE = 680;
 
 export interface DragPoint {
   x: number;
@@ -32,18 +31,16 @@ export interface DragPoint {
 
 interface Props {
   item: ClassifyItem | null;
-  /** 目前選定的上滑目標名稱（顯示於上滑提示） */
   targetTitle: string | null;
+  /** 下滑目標名稱：下滑手勢現為分類（非查看），提示用 */
+  downTargetTitle?: string | null;
   canSwipeUp: boolean;
-  /** 父層以 highlightShared 同步目前手指下方的目標，worklet 在放開瞬間同步讀取 */
-  highlightShared: SharedValue<string | null>;
+  gestureSettings?: GestureSettings;
   onSwipeUp: () => void;
-  onTrash: () => void;
-  onDropToAlbum: (targetId: string) => void;
-  onDropDragStart: () => void;
-  onDropDragMove: (p: DragPoint) => void;
-  onDropDragEnd: () => void;
-  /** 上滑但未選擇目標時：回彈 + 提示，而非分類 */
+  onSwipeRight?: () => void;
+  onSwipeLeft?: () => void;
+  onSwipeDown?: () => void;
+  onTrash?: () => void;
   onNeedTarget: () => void;
 }
 
@@ -53,22 +50,17 @@ function snapBack(tx: SharedValue<number>, ty: SharedValue<number>) {
   ty.value = withSpring(0, { damping: 18, stiffness: 220 });
 }
 
-/**
- * 中央照片卡（P2）：單張、原始比例不裁切、輕觸放大。
- * 上滑＝放入選定相簿；左右滑＝待刪除；下拖＝拖到指定相簿放開。
- * 放開未達門檻一律彈回原位，不執行分類。
- */
 export function ClassifyPhoto({
   item,
   targetTitle,
+  downTargetTitle,
   canSwipeUp,
-  highlightShared,
+  gestureSettings = { up: 'album', down: 'inspect', left: 'skip', right: 'trash' },
   onSwipeUp,
+  onSwipeRight,
+  onSwipeLeft,
+  onSwipeDown,
   onTrash,
-  onDropToAlbum,
-  onDropDragStart,
-  onDropDragMove,
-  onDropDragEnd,
   onNeedTarget,
 }: Props) {
   const { bg, muted } = useTheme();
@@ -77,12 +69,69 @@ export function ClassifyPhoto({
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
   const lock = useSharedValue(false);
-  const dropActive = useSharedValue(false);
-  const lastSentX = useSharedValue(0);
-  const lastSentY = useSharedValue(0);
 
   const openZoom = useMemo(() => () => setZoom(true), []);
 
+  const handleRight = useMemo(() => {
+    if (onSwipeRight) return onSwipeRight;
+    if (onTrash) return onTrash;
+    return () => {};
+  }, [onSwipeRight, onTrash]);
+
+  // 根據自訂方向手勢分發動作
+  const dispatchAction = useMemo(() => {
+    return (
+      action: GestureAction,
+      flyX: number,
+      flyY: number,
+      onComplete?: () => void,
+    ) => {
+      if (action === 'none') {
+        snapBack(tx, ty);
+        return;
+      }
+      if (action === 'album') {
+        if (!canSwipeUp) {
+          snapBack(tx, ty);
+          onNeedTarget();
+          return;
+        }
+        lock.value = true;
+        tx.value = withTiming(flyX, { duration: 220 });
+        ty.value = withTiming(flyY, { duration: 220 }, (done) => {
+          if (done) runOnJS(onSwipeUp)();
+        });
+        return;
+      }
+      if (action === 'trash') {
+        lock.value = true;
+        tx.value = withTiming(flyX, { duration: 220 });
+        ty.value = withTiming(flyY, { duration: 220 }, (done) => {
+          if (done) runOnJS(handleRight)();
+        });
+        return;
+      }
+      if (action === 'skip') {
+        lock.value = true;
+        tx.value = withTiming(flyX, { duration: 220 });
+        ty.value = withTiming(flyY, { duration: 220 }, (done) => {
+          if (done) {
+            if (onSwipeLeft) runOnJS(onSwipeLeft)();
+            else runOnJS(handleRight)();
+          }
+        });
+        return;
+      }
+      if (action === 'inspect') {
+        snapBack(tx, ty);
+        if (onSwipeDown) onSwipeDown();
+        return;
+      }
+      snapBack(tx, ty);
+    };
+  }, [canSwipeUp, handleRight, lock, onNeedTarget, onSwipeDown, onSwipeLeft, onSwipeUp, tx, ty]);
+
+  // 單指滑動手勢
   const pan = useMemo(
     () =>
       Gesture.Pan()
@@ -95,27 +144,6 @@ export function ClassifyPhoto({
           if (lock.value) return;
           tx.value = e.translationX;
           ty.value = e.translationY;
-          if (ty.value > DROP_ARM) {
-            if (!dropActive.value) {
-              dropActive.value = true;
-              lastSentX.value = e.absoluteX;
-              lastSentY.value = e.absoluteY;
-              runOnJS(onDropDragStart)();
-              runOnJS(onDropDragMove)({ x: e.absoluteX, y: e.absoluteY });
-            } else {
-              const dx = e.absoluteX - lastSentX.value;
-              const dy = e.absoluteY - lastSentY.value;
-              // 節流：移動超過 10px 才回傳 JS 做命中判斷，避免每幀過橋
-              if (dx * dx + dy * dy > 100) {
-                lastSentX.value = e.absoluteX;
-                lastSentY.value = e.absoluteY;
-                runOnJS(onDropDragMove)({ x: e.absoluteX, y: e.absoluteY });
-              }
-            }
-          } else if (dropActive.value) {
-            dropActive.value = false;
-            runOnJS(onDropDragEnd)();
-          }
         })
         .onEnd((e) => {
           if (lock.value) return;
@@ -124,84 +152,35 @@ export function ClassifyPhoto({
           const vx = e.velocityX ?? 0;
           const vy = e.velocityY ?? 0;
           const horizontal = Math.abs(dx) >= Math.abs(dy);
-          const clearDrop = () => {
-            if (dropActive.value) {
-              dropActive.value = false;
-              runOnJS(onDropDragEnd)();
-            }
-          };
 
-          // 上滑：放入選定相簿
+          // 向上
           if (!horizontal && dy < 0 && (dy < UP_THRESHOLD || (vy < -900 && dy < -40))) {
-            if (!canSwipeUp) {
-              snapBack(tx, ty);
-              clearDrop();
-              runOnJS(onNeedTarget)();
-              return;
-            }
-            lock.value = true;
-            clearDrop();
-            tx.value = withTiming(0, { duration: 200 });
-            ty.value = withTiming(-FLY_DISTANCE, { duration: 220 }, (done) => {
-              if (done) runOnJS(onSwipeUp)();
-            });
+            runOnJS(dispatchAction)(gestureSettings.up, 0, -FLY_DISTANCE);
             return;
           }
-          // 左右滑：捨棄（同功能）
-          if (horizontal && (Math.abs(dx) > TRASH_THRESHOLD || (Math.abs(vx) > 900 && Math.abs(dx) > 40))) {
-            lock.value = true;
-            clearDrop();
-            const dir = dx >= 0 ? 1 : -1;
-            tx.value = withTiming(dir * FLY_DISTANCE, { duration: 220 }, (done) => {
-              if (done) runOnJS(onTrash)();
-            });
-            ty.value = withTiming(0, { duration: 220 });
+          // 向下
+          if (!horizontal && dy > 0 && (dy > DOWN_THRESHOLD || (vy > 900 && dy > 40))) {
+            runOnJS(dispatchAction)(gestureSettings.down, 0, FLY_DISTANCE);
             return;
           }
-          // 下拖：必須落在某個目標相簿上才成立
-          if (!horizontal && dy > 0 && dy > DROP_THRESHOLD) {
-            const target = highlightShared.value;
-            if (target) {
-              lock.value = true;
-              clearDrop();
-              tx.value = withTiming(0, { duration: 180 });
-              ty.value = withTiming(FLY_DISTANCE, { duration: 220 }, (done) => {
-                if (done) runOnJS(onDropToAlbum)(target);
-              });
-              return;
-            }
+          // 向右
+          if (horizontal && dx > 0 && (dx > H_THRESHOLD || (vx > 900 && dx > 40))) {
+            runOnJS(dispatchAction)(gestureSettings.right, FLY_DISTANCE, 0);
+            return;
           }
-          // 未達門檻：回彈，不分類
+          // 向左
+          if (horizontal && dx < 0 && (-dx > H_THRESHOLD || (vx < -900 && -dx > 40))) {
+            runOnJS(dispatchAction)(gestureSettings.left, -FLY_DISTANCE, 0);
+            return;
+          }
           snapBack(tx, ty);
-          clearDrop();
         })
         .onFinalize(() => {
-          // 手勢被中斷（如中途重建）時保證回彈，不留下偏移殘影
           if (!lock.value && (tx.value !== 0 || ty.value !== 0)) {
             snapBack(tx, ty);
-            if (dropActive.value) {
-              dropActive.value = false;
-              runOnJS(onDropDragEnd)();
-            }
           }
         }),
-    [
-      canSwipeUp,
-      highlightShared,
-      lock,
-      dropActive,
-      lastSentX,
-      lastSentY,
-      tx,
-      ty,
-      onDropDragEnd,
-      onDropDragMove,
-      onDropDragStart,
-      onDropToAlbum,
-      onNeedTarget,
-      onSwipeUp,
-      onTrash,
-    ],
+    [dispatchAction, gestureSettings, lock, tx, ty],
   );
 
   const tap = useMemo(
@@ -212,29 +191,32 @@ export function ClassifyPhoto({
     [openZoom],
   );
 
-  const composed = useMemo(() => Gesture.Exclusive(pan, tap), [pan, tap]);
+  const composed = useMemo(
+    () => Gesture.Exclusive(pan, tap),
+    [pan, tap],
+  );
 
   const cardStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: tx.value },
       { translateY: ty.value },
       {
-        rotate: `${interpolate(tx.value, [-320, 320], [-14, 14], Extrapolation.CLAMP)}deg`,
-      },
-      {
-        scale: interpolate(ty.value, [DROP_ARM, 260], [1, 0.94], Extrapolation.CLAMP),
+        rotate: `${interpolate(tx.value, [-320, 320], [-12, 12], Extrapolation.CLAMP)}deg`,
       },
     ],
   }));
 
   const upHintStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(ty.value, [-130, -45], [1, 0], Extrapolation.CLAMP),
+    opacity: interpolate(ty.value, [-120, -40], [1, 0], Extrapolation.CLAMP),
   }));
-  const trashHintStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(Math.abs(tx.value), [45, 110], [0, 1], Extrapolation.CLAMP),
+  const rightHintStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(tx.value, [40, 100], [0, 1], Extrapolation.CLAMP),
   }));
-  const dropHintStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(ty.value, [DROP_ARM, 95], [0, 1], Extrapolation.CLAMP),
+  const leftHintStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(tx.value, [-100, -40], [1, 0], Extrapolation.CLAMP),
+  }));
+  const downHintStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(ty.value, [40, 90], [0, 1], Extrapolation.CLAMP),
   }));
 
   if (!item) {
@@ -246,8 +228,8 @@ export function ClassifyPhoto({
   }
 
   const aspect = item.width && item.height ? item.width / item.height : 1;
-  const maxW = SCREEN_W - 24;
-  const maxH = SCREEN_H * 0.52;
+  const maxW = SCREEN_W - 20;
+  const maxH = SCREEN_H * 0.52; // 放寬高度，避免遮擋
   let w = maxW;
   let h = w / aspect;
   if (h > maxH) {
@@ -255,62 +237,283 @@ export function ClassifyPhoto({
     w = h * aspect;
   }
 
+  // 取得各方向文案
+  const getActionCopy = (act: GestureAction, dir: GestureDirection) => {
+    switch (act) {
+      case 'album':
+        return targetTitle ? `放入「${targetTitle}」` : '放入相簿 (請先選)';
+      case 'trash':
+        return '移至垃圾桶';
+      case 'skip':
+        return '略過此張';
+      case 'inspect':
+        // 下滑手勢已改為「分入下滑目標」，查看改走工具列 ⓘ 按鈕
+        return downTargetTitle ? `放入「${downTargetTitle}」` : '下滑分類 (請先選)';
+      case 'none':
+        return '';
+    }
+  };
+
+  const formatDuration = (ms?: number) => {
+    if (!ms || ms <= 0) return '';
+    const totalSecs = Math.round(ms / 1000);
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const body = (
     <Animated.View style={[styles.card, cardStyle]}>
-      <Image source={{ uri: item.uri }} style={{ width: w, height: h, borderRadius: 10 }} contentFit="contain" />
-      {/* 上滑提示 */}
-      <Animated.View style={[styles.hintBubble, styles.upBubble, upHintStyle]} pointerEvents="none">
-        <Text style={styles.hintText}>↑ {targetTitle ? `放入「${targetTitle}」` : '請先選擇目標相簿'}</Text>
-      </Animated.View>
-      {/* 左右捨棄提示 */}
-      <Animated.View style={[styles.hintBubble, styles.trashBubble, trashHintStyle]} pointerEvents="none">
-        <Text style={styles.hintText}>捨棄</Text>
-      </Animated.View>
-      {/* 下拖提示 */}
-      <Animated.View style={[styles.hintBubble, styles.dropBubble, dropHintStyle]} pointerEvents="none">
-        <Text style={styles.hintText}>拖到下方相簿放開</Text>
-      </Animated.View>
+      <Image
+        source={{ uri: item.uri }}
+        style={{ width: w, height: h, borderRadius: 12 }}
+        contentFit="contain"
+        recyclingKey={item.assetId}
+        cachePolicy="memory-disk"
+      />
+      {item.mediaType === 'video' ? (
+        <View style={styles.videoBadge}>
+          <Text style={styles.videoBadgeText}>▶ 影片{item.duration ? ` ${formatDuration(item.duration)}` : ''}</Text>
+        </View>
+      ) : null}
     </Animated.View>
   );
 
   return (
     <View style={styles.wrap}>
+      {/* 頂端統一手勢預覽提示條（不隨卡片移動，不會被手指擋住） */}
+      {gestureSettings.up !== 'none' ? (
+        <Animated.View style={[styles.unifiedTopHint, styles.upHintBanner, upHintStyle]} pointerEvents="none">
+          <ArrowCircle direction="up" size={18} color="#fff" />
+          <Text style={styles.hintText}>{getActionCopy(gestureSettings.up, 'up')}</Text>
+        </Animated.View>
+      ) : null}
+
+      {gestureSettings.right !== 'none' ? (
+        <Animated.View
+          style={[
+            styles.unifiedTopHint,
+            gestureSettings.right === 'trash' ? styles.trashHintBanner : styles.normalHintBanner,
+            rightHintStyle,
+          ]}
+          pointerEvents="none">
+          <Text style={styles.hintText}>{getActionCopy(gestureSettings.right, 'right')}</Text>
+          <ArrowCircle direction="right" size={18} color="#fff" />
+        </Animated.View>
+      ) : null}
+
+      {gestureSettings.left !== 'none' ? (
+        <Animated.View style={[styles.unifiedTopHint, styles.normalHintBanner, leftHintStyle]} pointerEvents="none">
+          <ArrowCircle direction="left" size={18} color="#fff" />
+          <Text style={styles.hintText}>{getActionCopy(gestureSettings.left, 'left')}</Text>
+        </Animated.View>
+      ) : null}
+
+      {gestureSettings.down !== 'none' ? (
+        <Animated.View style={[styles.unifiedTopHint, styles.normalHintBanner, downHintStyle]} pointerEvents="none">
+          <ArrowCircle direction="down" size={18} color="#fff" />
+          <Text style={styles.hintText}>{getActionCopy(gestureSettings.down, 'down')}</Text>
+        </Animated.View>
+      ) : null}
+
       {zoom ? (
-        body
+        <View style={styles.touchArea}>{body}</View>
       ) : (
-        <GestureDetector gesture={composed}>{body}</GestureDetector>
+        <GestureDetector gesture={composed}>
+          <Animated.View style={styles.touchArea} collapsable={false}>
+            {body}
+          </Animated.View>
+        </GestureDetector>
       )}
-      <Text style={[styles.caption, { color: muted }]}>輕觸放大 · 上滑分類 · 左右滑捨棄 · 下拖指定相簿</Text>
+
       <Modal visible={zoom} animationType="fade" onRequestClose={() => setZoom(false)}>
         <View style={styles.zoomBg}>
-          <Pressable style={styles.zoomClose} onPress={() => setZoom(false)}>
+          <Pressable style={styles.zoomClose} onPress={() => setZoom(false)} hitSlop={12}>
             <Text style={styles.zoomCloseText}>✕ 關閉</Text>
           </Pressable>
-          {/* 放大檢視時不掛手勢：分類手勢暫停，避免誤觸 */}
-          <Image source={{ uri: item.uri }} style={{ width: SCREEN_W, height: SCREEN_H * 0.8 }} contentFit="contain" />
-          <Text style={[styles.caption, { color: '#A8A29E' }]}>放大檢視中（分類手勢已暫停）</Text>
+          <ZoomViewer key={item.uri} uri={item.uri} onClose={() => setZoom(false)} />
+          <Text style={[styles.caption, { color: '#A8A29E' }]}>雙指縮放細看 · 雙擊切換 · 1 倍下滑關閉</Text>
         </View>
       </Modal>
     </View>
   );
 }
 
+/**
+ * 原生風格檢視縮放：
+ * 1. 雙指以手指為中心 1~4 倍，放手停在那，不彈回 1。
+ * 2. 放大後單指才能拖曳；1 倍時下滑關閉。
+ * 3. 雙擊在 1 倍和 2.5 倍之間切換。
+ */
+function ZoomViewer({ uri, onClose }: { uri: string; onClose: () => void }) {
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  const tx = useSharedValue(0);
+  const ty = useSharedValue(0);
+  const savedTx = useSharedValue(0);
+  const savedTy = useSharedValue(0);
+  const focalX = useSharedValue(0);
+  const focalY = useSharedValue(0);
+
+  const pinch = useMemo(
+    () =>
+      Gesture.Pinch()
+        .onStart((e) => {
+          'worklet';
+          focalX.value = e.focalX - SCREEN_W / 2;
+          focalY.value = e.focalY - SCREEN_H / 2;
+        })
+        .onUpdate((e) => {
+          'worklet';
+          const next = savedScale.value * e.scale;
+          scale.value = Math.min(4, Math.max(1, next));
+        })
+        .onEnd(() => {
+          'worklet';
+          savedScale.value = scale.value;
+          if (scale.value <= 1.01) {
+            scale.value = 1;
+            savedScale.value = 1;
+            tx.value = withSpring(0);
+            ty.value = withSpring(0);
+            savedTx.value = 0;
+            savedTy.value = 0;
+          }
+        }),
+    [focalX, focalY, scale, savedScale, tx, ty, savedTx, savedTy],
+  );
+
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .averageTouches(true)
+        .onUpdate((e) => {
+          'worklet';
+          if (scale.value <= 1.02) {
+            // 1 倍時允許單指向下滑動關閉檢視
+            if (e.translationY > 0) {
+              ty.value = e.translationY;
+            }
+            return;
+          }
+          const limitX = Math.max(0, (SCREEN_W * (scale.value - 1)) / 2 + 30);
+          const limitY = Math.max(0, (SCREEN_H * 0.78 * (scale.value - 1)) / 2 + 30);
+          const nx = savedTx.value + e.translationX;
+          const ny = savedTy.value + e.translationY;
+          tx.value = Math.min(limitX, Math.max(-limitX, nx));
+          ty.value = Math.min(limitY, Math.max(-limitY, ny));
+        })
+        .onEnd((e) => {
+          'worklet';
+          if (scale.value <= 1.02) {
+            if (e.translationY > 100 || (e.velocityY && e.velocityY > 800)) {
+              runOnJS(onClose)();
+            } else {
+              ty.value = withSpring(0);
+            }
+            return;
+          }
+          savedTx.value = tx.value;
+          savedTy.value = ty.value;
+        }),
+    [onClose, scale, tx, ty, savedTx, savedTy],
+  );
+
+  const doubleTap = useMemo(
+    () =>
+      Gesture.Tap()
+        .numberOfTaps(2)
+        .onEnd(() => {
+          'worklet';
+          if (scale.value > 1.3) {
+            scale.value = withSpring(1);
+            savedScale.value = 1;
+            tx.value = withSpring(0);
+            ty.value = withSpring(0);
+            savedTx.value = 0;
+            savedTy.value = 0;
+          } else {
+            scale.value = withSpring(2.5);
+            savedScale.value = 2.5;
+          }
+        }),
+    [scale, savedScale, tx, ty, savedTx, savedTy],
+  );
+
+  const composed = useMemo(
+    () => Gesture.Exclusive(doubleTap, Gesture.Simultaneous(pinch, pan)),
+    [pinch, pan, doubleTap],
+  );
+
+  const zoomStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: scale.value }],
+  }));
+
+  return (
+    <GestureDetector gesture={composed}>
+      <Animated.View style={[styles.zoomCanvas, zoomStyle]}>
+        <Image
+          source={{ uri }}
+          style={{ width: SCREEN_W, height: SCREEN_H * 0.78 }}
+          contentFit="contain"
+          cachePolicy="memory-disk"
+          recyclingKey={uri}
+        />
+      </Animated.View>
+    </GestureDetector>
+  );
+}
+
 const styles = StyleSheet.create({
-  wrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 8 },
+  wrap: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' },
+  touchArea: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
   card: { alignItems: 'center', justifyContent: 'center' },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 300 },
-  caption: { fontSize: 11, marginTop: 8 },
-  hintBubble: {
+  videoBadge: {
     position: 'absolute',
-    borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    top: 12,
+    left: 12,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    zIndex: 5,
   },
-  upBubble: { top: 12, backgroundColor: 'rgba(28,25,23,0.85)' },
-  trashBubble: { top: '44%', backgroundColor: 'rgba(220,38,38,0.88)' },
-  dropBubble: { bottom: 12, backgroundColor: 'rgba(28,25,23,0.85)' },
-  hintText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  videoBadgeText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 280 },
+  caption: { fontSize: 11, marginTop: 6, textAlign: 'center', paddingHorizontal: 16 },
+  unifiedTopHint: {
+    position: 'absolute',
+    top: 8,
+    alignSelf: 'center',
+    zIndex: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  upHintBanner: {
+    backgroundColor: 'rgba(28,25,23,0.92)',
+  },
+  normalHintBanner: {
+    backgroundColor: 'rgba(41,37,36,0.92)',
+  },
+  trashHintBanner: {
+    backgroundColor: 'rgba(220,38,38,0.92)',
+  },
+  hintText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   zoomBg: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
   zoomClose: { position: 'absolute', top: 48, right: 20, zIndex: 1, padding: 10 },
   zoomCloseText: { color: '#fff', fontSize: 15 },
+  zoomCanvas: { alignItems: 'center', justifyContent: 'center' },
 });
