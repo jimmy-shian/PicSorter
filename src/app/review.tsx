@@ -148,7 +148,7 @@ export default function ReviewScreen() {
             ]}
             disabled={totalPending === 0 || isEmpty}
             onPress={() => router.push('/apply')}>
-            <Text style={[styles.applyText, { color: totalPending === 0 ? muted : bg }]}>確認並套用</Text>
+            <Text style={[styles.applyText, { color: totalPending === 0 ? muted : bg }]}>套用變更</Text>
           </Pressable>
         )}
       </ScrollView>

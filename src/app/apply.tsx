@@ -39,11 +39,16 @@ export default function ApplyScreen() {
   const [result, setResult] = useState<{ appliedAlbum: number; appliedTrash: number; pendingCount: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const cancelRef = useRef(false);
+  const [dontAsk, setDontAsk] = useState(false);
+  const rememberTrash = useRef(false);
+  const [preferenceError, setPreferenceError] = useState(false);
   // App 內自訂確認框狀態：取代原生 Alert，樣式跟主題走。
   // 管線跑到垃圾桶階段時 requestTrashConfirm 會顯示此框、等待使用者選擇；
   // 之後 OS 還會有一次系統同意框（批次一次，無法移除，見下方說明）。
   const [trashDialog, setTrashDialog] = useState<null | { step: 'first' | 'second'; count: number }>(null);
   const trashResolver = useRef<((v: 'trash' | 'permanent' | 'skip') => void) | null>(null);
+  const [albumDialog, setAlbumDialog] = useState<null | { count: number; title: string | null; albumCount: number }>(null);
+  const albumResolver = useRef<((allowed: boolean) => void) | null>(null);
 
   const sessionId = session.sessionId;
 
@@ -64,11 +69,13 @@ export default function ApplyScreen() {
   }, [db, sessionId]);
 
   const requestTrashConfirm = useCallback((count: number): Promise<'trash' | 'permanent' | 'skip'> => {
+    if (!session.confirmBeforeTrash && (Platform.OS === 'ios' || isSystemTrashAvailable())) return Promise.resolve('trash');
+    setDontAsk(false);
     return new Promise((resolve) => {
       trashResolver.current = resolve;
       setTrashDialog({ step: 'first', count });
     });
-  }, []);
+  }, [session.confirmBeforeTrash]);
 
   const resolveTrash = useCallback((v: 'trash' | 'permanent' | 'skip') => {
     setTrashDialog(null);
@@ -76,9 +83,31 @@ export default function ApplyScreen() {
     trashResolver.current = null;
   }, []);
 
+  const requestAlbumConfirm = useCallback(
+    (count: number, title: string | null, albumCount: number): Promise<boolean> =>
+      new Promise((resolve) => {
+        albumResolver.current = resolve;
+        setAlbumDialog({ count, title, albumCount });
+      }),
+    [],
+  );
+
+  const resolveAlbum = useCallback((allowed: boolean) => {
+    setAlbumDialog(null);
+    albumResolver.current?.(allowed);
+    albumResolver.current = null;
+  }, []);
+
+  useEffect(() => () => {
+    cancelRef.current = true;
+    trashResolver.current?.('skip'); trashResolver.current = null;
+    albumResolver.current?.(false); albumResolver.current = null;
+  }, []);
+
   const handleStart = useCallback(async () => {
     if (!sessionId || busy) return;
     setBusy(true);
+    rememberTrash.current = false;
     cancelRef.current = false;
     setStage('running');
     try {
@@ -86,14 +115,20 @@ export default function ApplyScreen() {
         onProgress: setProgress,
         isCancelled: () => cancelRef.current,
         requestTrashConfirm,
+        albumConfirmMode: session.moveConfirmMode,
+        requestAlbumConfirm,
       });
+      if (r.appliedTrash > 0 && rememberTrash.current) {
+        try { await session.updateConfirmBeforeTrash(false); }
+        catch { setPreferenceError(true); }
+      }
       setResult(r);
       await refreshSummary();
       setStage('done');
     } finally {
       setBusy(false);
     }
-  }, [sessionId, busy, session, requestTrashConfirm, refreshSummary]);
+  }, [sessionId, busy, session, requestTrashConfirm, requestAlbumConfirm, refreshSummary]);
 
   const handleRetry = useCallback(() => {
     setResult(null);
@@ -123,16 +158,16 @@ export default function ApplyScreen() {
   const trashCount = trashDialog?.count ?? summary?.trashPending ?? 0;
   const trashFirstTitle =
     Platform.OS === 'ios'
-      ? '確認移入最近刪除？'
+      ? '移入最近刪除？'
       : isSystemTrashAvailable()
-        ? '確認移入垃圾桶？'
+        ? '移入垃圾桶？'
         : '此系統沒有垃圾桶';
   const trashFirstMessage =
     Platform.OS === 'ios'
-      ? `是否將這 ${trashCount} 張照片移到系統「最近刪除」？30 天內可在系統相簿中復原。之後系統還會再問一次（整批一次）。`
+      ? `將 ${trashCount} 張照片移至系統「最近刪除」。`
       : isSystemTrashAvailable()
-        ? `是否將這 ${trashCount} 張照片移到系統垃圾桶？之後可在系統相簿垃圾桶中復原或清空。之後系統還會再問一次（整批一次）。`
-        : `確認將這 ${trashCount} 張照片永久刪除嗎？此動作無法復原（此系統沒有垃圾桶）。`;
+        ? `將 ${trashCount} 張照片移至系統垃圾桶。`
+        : `將 ${trashCount} 張照片永久刪除？`;
 
   const trashDialogs = (
     <>
@@ -142,30 +177,36 @@ export default function ApplyScreen() {
         message={trashFirstMessage}
         confirmText={
           Platform.OS === 'ios'
-            ? '確認移入'
+            ? '移入最近刪除'
             : isSystemTrashAvailable()
-              ? '確認移入垃圾桶'
+              ? '移入垃圾桶'
               : '我了解，繼續'
         }
         destructive={!isSystemTrashAvailable() && Platform.OS !== 'ios'}
+        destructiveHint="此操作會永久刪除照片，無法復原。"
         onConfirm={() => {
-          // 舊機永久刪除要二次確認；其他直接放行，交給系統框做第二次確認
-          if (Platform.OS !== 'ios' && !isSystemTrashAvailable()) {
-            setTrashDialog((prev) => ({ step: 'second', count: prev?.count ?? trashCount }));
-          } else {
-            resolveTrash('trash');
-          }
+          rememberTrash.current = dontAsk && (Platform.OS === 'ios' || isSystemTrashAvailable());
+          resolveTrash(Platform.OS !== 'ios' && !isSystemTrashAvailable() ? 'permanent' : 'trash');
         }}
-        onCancel={() => resolveTrash('skip')}
-      />
+        onCancel={() => resolveTrash('skip')}>
+        {(Platform.OS === 'ios' || isSystemTrashAvailable()) && <Pressable accessibilityRole="checkbox"
+          accessibilityLabel="之後不再詢問" accessibilityState={{ checked: dontAsk }} onPress={() => setDontAsk(!dontAsk)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 48 }}>
+          <Text style={{ color: text, fontSize: 22 }}>{dontAsk ? '☑' : '☐'}</Text>
+          <Text style={{ color: text, fontSize: 14 }}>之後不再詢問</Text>
+        </Pressable>}
+      </ConfirmDialog>
       <ConfirmDialog
-        visible={stage === 'running' && trashDialog?.step === 'second'}
-        title={`再次確認：永久刪除 ${trashCount} 張照片？`}
-        message="刪除後無法復原。"
-        confirmText="確認刪除"
-        destructive
-        onConfirm={() => resolveTrash('permanent')}
-        onCancel={() => resolveTrash('skip')}
+        visible={stage === 'running' && albumDialog !== null}
+        title="確認移動照片？"
+        message={
+          albumDialog?.title
+            ? `將 ${albumDialog.count} 張照片移至「${albumDialog.title}」？`
+            : `將 ${albumDialog?.count ?? 0} 張照片移至 ${albumDialog?.albumCount ?? 0} 個相簿？`
+        }
+        confirmText="確認"
+        onConfirm={() => resolveAlbum(true)}
+        onCancel={() => resolveAlbum(false)}
       />
     </>
   );
@@ -210,7 +251,7 @@ export default function ApplyScreen() {
               <Pressable
                 style={[styles.primary, { backgroundColor: text }]}
                 onPress={() => void handleStart()}>
-                <Text style={[styles.primaryText, { color: bg }]}>開始套用</Text>
+                <Text style={[styles.primaryText, { color: bg }]}>套用變更</Text>
               </Pressable>
               <Pressable style={[styles.ghost, { borderColor: border }]} onPress={() => router.back()}>
                 <Text style={[styles.primaryText, { color: text }]}>返回檢查</Text>
@@ -230,16 +271,15 @@ export default function ApplyScreen() {
         ? '正在檢查相簿與照片…'
         : progress.phase === 'album'
           ? `正在加入${progress.label ? `「${progress.label}」` : '相簿'}…`
-          : '正在處理待刪除照片…';
+          : Platform.OS === 'ios' ? '正在移入最近刪除…' : isSystemTrashAvailable() ? '正在移動至垃圾桶…' : '正在永久刪除…';
     return (
       <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.center, { backgroundColor: bg }]}>
-        <Text style={[styles.title, { color: text }]}>套用中</Text>
-        <Text style={[styles.sub, { color: muted }]}>
-          {progress.done} / {progress.total}（{pct}%）
-        </Text>
+
+        <Text style={{ color: text, fontSize: 40, fontWeight: '600', fontVariant: ['tabular-nums'] }}>{pct}%</Text>
         <View style={[styles.barOuter, { borderColor: border }]}>
           <View style={[styles.barInner, { backgroundColor: text, width: `${pct}%` }]} />
         </View>
+        <Text style={[styles.note, { color: muted }]}>{progress.done} / {progress.total}</Text>
         <Text style={[styles.sub, { color: muted }]}>{phaseText}</Text>
         <Text style={[styles.note, { color: muted }]}>已完成的不會因取消而回滾；取消後剩餘保持未套用。</Text>
         <Pressable style={[styles.ghost, styles.cancelBtn, { borderColor: border }]} onPress={() => { cancelRef.current = true; }}>
@@ -256,6 +296,8 @@ export default function ApplyScreen() {
   const failed = s?.failedItems ?? [];
   return (
     <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.root, { backgroundColor: bg }]}>
+      <ConfirmDialog visible={preferenceError} title="偏好未儲存" message="照片已完成處理，請到設定頁重新設定不再詢問。" confirmText="知道了"
+        onConfirm={() => setPreferenceError(false)} onCancel={() => setPreferenceError(false)} />
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <Text style={[styles.title, { color: text }]}>{pendingLeft === 0 ? '整理完成' : '套用中斷'}</Text>
         <View style={[styles.row, { borderColor: border, backgroundColor: card }]}>

@@ -1,4 +1,7 @@
 @echo off
+rem Ensure console uses UTF-8 and supports ANSI color sequences
+chcp 65001 >nul
+reg add HKCU\Console /v VirtualTerminalLevel /t REG_DWORD /d 1 /f >nul 2>&1
 rem ============================================================
 rem PicSorter APK Builder & Release Packager
 rem
@@ -107,14 +110,16 @@ if errorlevel 1 goto :err
 cd /d %~dp0
 
 rem --- [Step 3/3] Copy and name output APK ---
-set SRC_APK=android\app\build\outputs\apk\release\app-release.apk
+set SRC_APK=%~dp0android\app\build\outputs\apk\release\app-release.apk
+set DEST_ABS=%~dp0%DEST%
 if not exist "%SRC_APK%" (
   echo [ERROR] Missing %SRC_APK%
+  dir "%~dp0android\app\build\outputs\apk\release" 2>nul
   goto :err
 )
 
 echo [3/3] Copying to %DEST% ...
-copy /y "%SRC_APK%" "%DEST%" >nul
+copy /y "%SRC_APK%" "%DEST_ABS%" >nul
 if errorlevel 1 goto :err
 
 echo ============================================================

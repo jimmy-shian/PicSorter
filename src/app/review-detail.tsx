@@ -1,8 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Dimensions,
   FlatList,
-  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -13,8 +12,10 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Image } from 'expo-image';
 import { useSession } from '@/lib/session-context';
 import { useTheme } from '@/lib/theme';
+import { getItemById } from '@/lib/media';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { TargetAlbumSheet } from '@/components/TargetAlbumSheet';
+import { openSystemPhotoViewer } from '@/lib/system-viewer';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const GAP = 8;
@@ -39,8 +40,7 @@ export default function ReviewDetailScreen() {
   const title = typeof params.title === 'string' && params.title ? params.title : isTrash ? '待刪除' : '相簿';
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [zoomUri, setZoomUri] = useState<string | null>(null);
-  const [zoomId, setZoomId] = useState<string | null>(null);
+  const [typeMap, setTypeMap] = useState<Map<string, 'image' | 'video'>>(new Map());
   const [sheetVisible, setSheetVisible] = useState(false);
   const [busy, setBusy] = useState(false);
   const [frozenNotice, setFrozenNotice] = useState(false);
@@ -90,21 +90,47 @@ export default function ReviewDetailScreen() {
 
   const ids = Array.from(selected);
 
-  const openZoom = (item: GridItem) => {
-    setZoomId(item.assetId);
-    setZoomUri(item.uri);
-  };
-  const closeZoom = () => {
-    setZoomId(null);
-    setZoomUri(null);
-  };
+  /** 點按縮圖 → 手機內建相片檢視（Android Intent VIEW）。
+   *  不帶 type 讓系統自行由 MediaStore URI 判斷圖片或影片，縮放交給系統原生檢視器。 */
+  const openSystemViewer = (item: GridItem) =>
+    openSystemPhotoViewer(item.assetId, item.uri, typeMap.get(item.assetId));
+
+  // 背景補齊每張的媒體類型，網格才能正確顯示影片標記
+  useEffect(() => {
+    let cancelled = false;
+    const missing = items.filter((i) => !typeMap.has(i.assetId)).slice(0, 60);
+    if (missing.length === 0) return;
+    void (async () => {
+      const next = new Map(typeMap);
+      for (const m of missing) {
+        try {
+          const got = await getItemById(m.assetId);
+          if (got?.mediaType) next.set(m.assetId, got.mediaType);
+        } catch {
+          // 單張查不到不影響其他
+        }
+        if (cancelled) return;
+      }
+      setTypeMap(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items.length]);
 
   const renderCell = ({ item }: { item: GridItem }) => {
     const checked = selected.has(item.assetId);
+    const isVideo = typeMap.get(item.assetId) === 'video';
     return (
       <View style={styles.cell}>
-        <Pressable onPress={() => openZoom(item)}>
+        <Pressable onPress={() => void openSystemViewer(item)}>
           <Image source={{ uri: item.uri }} style={styles.thumb} contentFit="cover" />
+          {isVideo ? (
+            <View style={styles.videoTag} pointerEvents="none">
+              <Text style={styles.videoTagText}>▶ 影片</Text>
+            </View>
+          ) : null}
         </Pressable>
         <Pressable
           style={[styles.badge, { borderColor: bg, backgroundColor: checked ? text : 'rgba(0,0,0,0.35)' }]}
@@ -190,27 +216,6 @@ export default function ReviewDetailScreen() {
         onConfirm={() => setFrozenNotice(false)}
         onCancel={() => setFrozenNotice(false)}
       />
-
-      <Modal visible={zoomUri !== null} animationType="fade" onRequestClose={closeZoom}>
-        <View style={styles.zoomBg}>
-          <Pressable style={styles.zoomClose} onPress={closeZoom}>
-            <Text style={styles.zoomCloseText}>✕ 關閉</Text>
-          </Pressable>
-          {zoomUri ? (
-            <Image source={{ uri: zoomUri }} style={{ width: SCREEN_W, height: SCREEN_W * 1.2 }} contentFit="contain" />
-          ) : null}
-          {zoomId ? (
-            <Pressable
-              style={[styles.zoomSelect, { borderColor: '#fff' }]}
-              onPress={() => {
-                toggle(zoomId);
-                closeZoom();
-              }}>
-              <Text style={styles.zoomCloseText}>{selected.has(zoomId) ? '取消選擇' : '選擇此張'}</Text>
-            </Pressable>
-          ) : null}
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -232,6 +237,16 @@ const styles = StyleSheet.create({
   row: { gap: GAP, marginBottom: GAP },
   cell: { width: CELL, height: CELL },
   thumb: { width: CELL, height: CELL, borderRadius: 6, backgroundColor: '#E7E5E4' },
+  videoTag: {
+    position: 'absolute',
+    left: 6,
+    bottom: 6,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  videoTagText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   badge: {
     position: 'absolute',
     top: 6,
@@ -254,15 +269,4 @@ const styles = StyleSheet.create({
   },
   actionBtn: { borderRadius: 8, paddingHorizontal: 14, paddingVertical: 11 },
   actionText: { fontSize: 13, fontWeight: '700' },
-  zoomBg: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
-  zoomClose: { position: 'absolute', top: 48, right: 20, zIndex: 1, padding: 10 },
-  zoomCloseText: { color: '#fff', fontSize: 15 },
-  zoomSelect: {
-    position: 'absolute',
-    bottom: 60,
-    borderWidth: 1.5,
-    borderRadius: 999,
-    paddingHorizontal: 22,
-    paddingVertical: 10,
-  },
 });

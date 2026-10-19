@@ -10,6 +10,61 @@ import {
 } from 'expo-media-library';
 import type { ClassifyItem, SortOrder, SourceAlbum, TargetAlbum } from '@/types';
 
+/**
+ * 正規化檔案 URI，確保 Android 能夠正確讀取（修正 file:/ 與缺少的 file:// scheme）。
+ */
+export function sanitizeFileUri(uri: string): string {
+  if (!uri) return '';
+  const trimmed = uri.trim();
+  if (trimmed.startsWith('file:///')) return trimmed;
+  if (trimmed.startsWith('file:/')) return trimmed.replace(/^file:\/+/, 'file:///');
+  if (trimmed.startsWith('/')) return `file://${trimmed}`;
+  return trimmed;
+}
+
+/**
+ * 將 assetId 轉為標準 MediaStore content:// URI（若是純數字 ID 自動補足路徑）。
+ */
+export function toContentUri(assetId: string, mediaType?: 'image' | 'video' | string): string {
+  if (assetId.startsWith('content://')) {
+    return assetId;
+  }
+  if (/^\d+$/.test(assetId.trim())) {
+    const typeSegment = mediaType === 'video' ? 'video' : 'images';
+    return `content://media/external/${typeSegment}/media/${assetId.trim()}`;
+  }
+  return assetId;
+}
+
+/**
+ * 取得雙層可用 URI：
+ * 1. fileUri: 本機直接檔案路徑（如 file:///storage/emulated/0/...），在 Android 上讀取效能最好、無 IPC 開銷。
+ * 2. contentUri: MediaStore 官方 URI（content://media/external/images/media/...），Scoped Storage 官方標準。
+ * 優先使用乾淨的 fileUri；若無 fileUri（如某些編輯過的照片系統未暴露 DATA 路徑）或失敗時，使用 contentUri。
+ */
+export function resolveUris(
+  assetId: string,
+  storedUri: string,
+  mediaType?: 'image' | 'video' | string,
+): { uri: string; fallbackUri?: string } {
+  const contentUri = toContentUri(assetId, mediaType);
+  const cleanStored = sanitizeFileUri(storedUri);
+
+  // 若有有效的 file:// 路徑，優先以直接檔案讀取（Glide 本機讀取最穩定），content:// 作為 fallback
+  if (cleanStored && cleanStored.startsWith('file://')) {
+    return {
+      uri: cleanStored,
+      fallbackUri: contentUri && contentUri !== cleanStored ? contentUri : undefined,
+    };
+  }
+
+  // 若無實體檔案路徑（例如部分編輯後的照片或純雲端串流），以 contentUri 為主
+  return {
+    uri: contentUri || cleanStored,
+    fallbackUri: cleanStored && cleanStored !== contentUri ? cleanStored : undefined,
+  };
+}
+
 export async function ensureReadPermission(): Promise<PermissionResponse> {
   const current = await getPermissionsAsync();
   if (current.granted || current.accessPrivileges === 'limited') return current;
@@ -227,7 +282,7 @@ export async function getPhotoPage(
   const assets: Asset[] = await query.exe();
   const items: ClassifyItem[] = [];
   for (const asset of assets) {
-    const [uri, width, height, creationTime, mediaType, duration] = await Promise.all([
+    const [storedUri, width, height, creationTime, mediaType, duration] = await Promise.all([
       asset.getUri().catch(() => ''),
       asset.getWidth().catch(() => 0),
       asset.getHeight().catch(() => 0),
@@ -235,14 +290,17 @@ export async function getPhotoPage(
       asset.getMediaType().catch(() => MediaType.IMAGE),
       asset.getDuration().catch(() => 0),
     ]);
+    const isVideo = mediaType === MediaType.VIDEO;
+    const { uri, fallbackUri } = resolveUris(asset.id, storedUri, isVideo ? 'video' : 'image');
     if (!uri) continue;
     items.push({
       assetId: asset.id,
       uri,
+      fallbackUri,
       width,
       height,
       creationTime,
-      mediaType: mediaType === MediaType.VIDEO ? 'video' : 'image',
+      mediaType: isVideo ? 'video' : 'image',
       duration: duration ?? 0,
     });
   }
@@ -256,7 +314,7 @@ export async function getPhotoPage(
 export async function getItemById(assetId: string): Promise<ClassifyItem | null> {
   try {
     const asset = new Asset(assetId);
-    const [uri, width, height, creationTime, mediaType, duration] = await Promise.all([
+    const [storedUri, width, height, creationTime, mediaType, duration] = await Promise.all([
       asset.getUri().catch(() => ''),
       asset.getWidth().catch(() => 0),
       asset.getHeight().catch(() => 0),
@@ -264,14 +322,17 @@ export async function getItemById(assetId: string): Promise<ClassifyItem | null>
       asset.getMediaType().catch(() => MediaType.IMAGE),
       asset.getDuration().catch(() => 0),
     ]);
+    const isVideo = mediaType === MediaType.VIDEO;
+    const { uri, fallbackUri } = resolveUris(assetId, storedUri, isVideo ? 'video' : 'image');
     if (!uri) return null;
     return {
       assetId,
       uri,
+      fallbackUri,
       width,
       height,
       creationTime,
-      mediaType: mediaType === MediaType.VIDEO ? 'video' : 'image',
+      mediaType: isVideo ? 'video' : 'image',
       duration: duration ?? 0,
     };
   } catch {

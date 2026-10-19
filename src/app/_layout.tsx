@@ -42,7 +42,7 @@ function ThemedStack() {
         <Stack.Screen name="index" />
         <Stack.Screen name="review" options={{ presentation: 'card', headerShown: true, title: '檢查結果' }} />
         <Stack.Screen name="review-detail" options={{ presentation: 'card', headerShown: false }} />
-        <Stack.Screen name="apply" options={{ presentation: 'card', headerShown: true, title: '確認並套用' }} />
+        <Stack.Screen name="apply" options={{ presentation: 'card', headerShown: true, title: '套用變更' }} />
         <Stack.Screen name="settings" options={{ presentation: 'card', headerShown: true, title: '設定' }} />
       </Stack>
     </>
