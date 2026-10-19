@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppState, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Link, router } from 'expo-router';
 import { usePermissions } from 'expo-media-library';
@@ -8,7 +8,7 @@ import { useTheme } from '@/lib/theme';
 import { getAssetAlbumTitles, isLimitedAccess } from '@/lib/media';
 import { SourceAlbumPicker } from '@/components/SourceAlbumPicker';
 import { ClassifyPhoto } from '@/components/ClassifyPhoto';
-import { AlbumBar } from '@/components/AlbumBar';
+import { AlbumBar, type AlbumBarHandle } from '@/components/AlbumBar';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { SpotlightTutorial } from '@/components/SpotlightTutorial';
 import { Chevron, GearIcon, InfoIcon, UndoIcon } from '@/components/GestureIcons';
@@ -17,17 +17,37 @@ import type { SortOrder } from '@/types';
 /**
  * 第一階段：照片分類
  * 左滑＝略過（不處理）· 右滑＝捨棄 · 上滑＝放入上滑目標相簿 · 下滑＝放入下滑目標相簿。
- * 底部右側 1~4 圓鈕點按選下滑目標（長按預覽全名），底部膠囊與全部清單點本體設上滑目標、
- * 清單列尾小按鈕設下滑目標；工具列 ⓘ 查看照片所在系統相簿。
+ * 底部四張單層相簿卡片可點選分類，長按照片後也可拖曳放入；上下滑目標獨立設定。
+ * 點按照片＝開手機內建相片檢視（系統縮放）；工具列 ⓘ 查看照片所在系統相簿。
  * 所有動作只寫入本機 SQLite，不動系統相簿。
  */
 export default function ClassifyScreen() {
-  const { bg, text, muted, border, card } = useTheme();
+  const { bg, text, muted, border, card, dark } = useTheme();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  const [screenHeight, setScreenHeight] = useState(windowHeight);
+  const bottomLimit = Math.floor(Math.max(0, screenHeight - insets.top - insets.bottom) * 0.25);
+  const bottomControls = useRef<View>(null);
   const [permission, requestPermission] = usePermissions();
   const [pickerVisible, setPickerVisible] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [dropMode, setDropMode] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const albumBar = useRef<AlbumBarHandle>(null);
+  const [bottomBlockHeight, setBottomBlockHeight] = useState(0);
+  const measureBottom = useCallback(() => {
+    bottomControls.current?.measureInWindow((x, y, width, height) => {
+      albumBar.current?.setViewport({ x, y, width, height });
+      albumBar.current?.refreshLayout();
+    });
+  }, []);
+  const onBottomLayout = useCallback((event: LayoutChangeEvent) => {
+    setBottomBlockHeight(event.nativeEvent.layout.height);
+  }, []);
+  const finishDrag = useCallback(() => { albumBar.current?.setPointer(null); setDropMode(false); setHighlightId(null); }, []);
+  const startDrag = useCallback(() => { setHighlightId(null); setDropMode(true); }, []);
+  const moveDrag = useCallback((point: { x: number; y: number }) => albumBar.current?.setPointer(point), []);
   const [emptyFinishVisible, setEmptyFinishVisible] = useState(false);
   const [inspectVisible, setInspectVisible] = useState(false);
   const [inspectLoading, setInspectLoading] = useState(false);
@@ -35,6 +55,7 @@ export default function ClassifyScreen() {
   const session = useSession();
 
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const appState = useRef(AppState.currentState);
 
   useEffect(() => {
     if (permission === null) {
@@ -69,6 +90,55 @@ export default function ClassifyScreen() {
     noticeTimer.current = setTimeout(() => setNotice(null), 2200);
   }, []);
 
+  const classifyToAlbum = session.classifyCurrent;
+  const dropPhoto = useCallback(async (point: { x: number; y: number }): Promise<boolean> => {
+    albumBar.current?.setPointer(null);
+    try {
+      const id = await albumBar.current?.getDropTarget(point);
+      if (id) {
+        const ok = await classifyToAlbum('album', id);
+        if (!ok) {
+          showNotice('分類失敗，請再試一次');
+          return false;
+        }
+        return true;
+      }
+      return false;
+    } catch {
+      showNotice('分類失敗，請再試一次');
+      return false;
+    } finally {
+      finishDrag();
+    }
+  }, [classifyToAlbum, finishDrag, showNotice]);
+  const quickLock = useRef(false);
+  const quickClassify = useCallback(async (id: string) => {
+    if (quickLock.current) return;
+    quickLock.current = true;
+    try { if (!await classifyToAlbum('album', id)) showNotice('分類失敗，請再試一次'); }
+    catch { showNotice('分類失敗，請再試一次'); }
+    finally { quickLock.current = false; }
+  }, [classifyToAlbum, showNotice]);
+  const gestureError = useCallback(() => showNotice('操作失敗，請再試一次'), [showNotice]);
+  // 長按底部快捷晶片：頂部通知顯示完整相簿名稱（Pressable 長按後不會再觸發 onPress 分類）
+  const showAlbumFullName = useCallback((id: string) => {
+    const album = session.targets.find((t) => t.id === id);
+    if (album) showNotice(album.title.trim() || '未設定');
+  }, [session.targets, showNotice]);
+
+  // 從系統相片檢視器回來後，外部 App 可能已刪除目前照片。
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const returnedToApp = appState.current !== 'active' && nextState === 'active';
+      appState.current = nextState;
+      if (!returnedToApp) return;
+      void session.refreshCurrentAsset().then((result) => {
+        if (result === 'missing') showNotice('照片已在系統檢視器中刪除，已從待處理列排除');
+      });
+    });
+    return () => subscription.remove();
+  }, [session, showNotice]);
+
   const handleSwipeUp = useCallback(async () => {
     const ok = await session.classifyCurrent('album');
     if (!ok) showNotice('分類失敗，請重試');
@@ -79,14 +149,14 @@ export default function ClassifyScreen() {
     if (!ok) showNotice('標記失敗，請重試');
   }, [session, showNotice]);
 
-  const handleSkip = useCallback(() => {
-    const ok = session.skipCurrent();
+  const handleSkip = useCallback(async () => {
+    const ok = await session.skipCurrent();
     if (!ok) showNotice('沒有更多照片了');
   }, [session, showNotice]);
 
   const handleSwipeDown = useCallback(async () => {
     if (!session.downTargetId) {
-      showNotice('請先在底部選擇下滑目標');
+      showNotice('請在「編輯」設定下滑相簿');
       return;
     }
     const title = session.targets.find((t) => t.id === session.downTargetId)?.title ?? '';
@@ -110,7 +180,7 @@ export default function ClassifyScreen() {
   }, [currentItem]);
 
   const handleNeedTarget = useCallback(() => {
-    showNotice('請先在底部選擇目標相簿');
+    showNotice('請點「↑ 上滑」設定目標相簿');
   }, [showNotice]);
 
   const handleFinish = useCallback(() => {
@@ -152,6 +222,8 @@ export default function ClassifyScreen() {
 
   const selectedTitle = session.targets.find((t) => t.id === session.selectedTargetId)?.title ?? null;
   const downTargetTitle = session.targets.find((t) => t.id === session.downTargetId)?.title ?? null;
+  const highlightAlbum = session.targets.find((t) => t.id === highlightId);
+  const highlightTitle = highlightAlbum?.title ?? null;
 
   // P3：啟動恢復 gate。尚未就緒前不顯示照片，避免建出空白工作。
   if (session.boot !== 'ready') {
@@ -186,7 +258,7 @@ export default function ClassifyScreen() {
   }
 
   return (
-    <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={[styles.root, { backgroundColor: bg }]}>
+    <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={[styles.root, { backgroundColor: bg }]} onLayout={(event) => setScreenHeight(event.nativeEvent.layout.height)}>
       {/* 頂部導覽列：來源相簿選擇 ＋ 設定 ＋ 結束整理 */}
       <View style={[styles.header, { borderColor: border }]}>
         <Pressable onPress={() => setPickerVisible(true)} style={styles.sourceBtn} hitSlop={8}>
@@ -233,7 +305,7 @@ export default function ClassifyScreen() {
       ) : null}
 
       {/* 中央照片（手勢卡） */}
-      <View style={styles.photoArea}>
+      <View style={[styles.photoArea, dropMode && { zIndex: 10, elevation: 10 }]} pointerEvents="box-none">
         {session.loading && session.queue.length === 0 ? (
           <Text style={{ color: muted }}>讀取照片中…</Text>
         ) : (
@@ -250,16 +322,30 @@ export default function ClassifyScreen() {
             onSwipeDown={handleSwipeDown}
             onTrash={handleTrash}
             onNeedTarget={handleNeedTarget}
+            onError={gestureError}
+            onDragStart={startDrag}
+            onDragMove={moveDrag}
+            onDragCancel={finishDrag}
+            onDrop={dropPhoto}
+            highlightTitle={highlightTitle}
           />
         )}
       </View>
       {notice ? (
-        <View style={styles.notice} pointerEvents="none">
-          <Text style={styles.noticeText} numberOfLines={2}>{notice}</Text>
+        <View
+          style={[styles.notice, {
+            bottom: insets.bottom + bottomBlockHeight + 12,
+            backgroundColor: dark ? text : 'rgba(0,0,0,0.78)',
+          }]}
+          pointerEvents="none">
+          <Text style={[styles.noticeText, dark && { color: bg }]} numberOfLines={2}>{notice}</Text>
         </View>
       ) : null}
 
-      {/* 精簡工具列：撤銷 + 查看所在相簿 + 檢查結果入口（精緻膠囊排版） */}
+      <View ref={bottomControls} collapsable={false} style={{ maxHeight: bottomLimit, flexShrink: 0 }} onLayout={(event) => { onBottomLayout(event); measureBottom(); }}>
+      <ScrollView style={{ flexGrow: 0, maxHeight: bottomLimit }} bounces={false} scrollEnabled={!dropMode}
+        onScroll={measureBottom} scrollEventThrottle={16} contentInsetAdjustmentBehavior="never">
+      {/* 底部所有操作合計最多佔安全內容高度的 25%；短螢幕或大字體可捲動。 */}
       <View style={styles.toolbar}>
         <View style={[styles.toolbarDock, { backgroundColor: card, borderColor: border }]}>
           <Pressable
@@ -268,7 +354,7 @@ export default function ClassifyScreen() {
             hitSlop={8}
             style={[styles.dockBtn, !session.canUndo && styles.dockBtnDisabled]}>
             <UndoIcon size={16} color={session.canUndo ? text : muted} />
-            <Text style={[styles.dockText, { color: session.canUndo ? text : muted }]}>
+            <Text numberOfLines={1} style={[styles.dockText, { color: session.canUndo ? text : muted }]}>
               撤銷
             </Text>
           </Pressable>
@@ -280,15 +366,15 @@ export default function ClassifyScreen() {
             accessibilityLabel="查看所在相簿"
             style={[styles.dockBtn, !currentItem && styles.dockBtnDisabled]}>
             <InfoIcon size={16} color={currentItem ? text : muted} />
-            <Text style={[styles.dockText, { color: currentItem ? text : muted }]}>
+            <Text numberOfLines={1} style={[styles.dockText, { color: currentItem ? text : muted }]}>
               查看
             </Text>
           </Pressable>
           <View style={[styles.dockDivider, { backgroundColor: border }]} />
           <Link href="/review" asChild>
             <Pressable style={styles.dockBtn} hitSlop={8}>
-              <Text style={[styles.dockText, { color: text }]}>
-                檢查結果
+              <Text numberOfLines={1} style={[styles.dockText, { color: text }]}>
+                結果
               </Text>
               <View style={[styles.dockBadge, { backgroundColor: session.processedCount > 0 ? text : border }]}>
                 <Text style={[styles.dockBadgeText, { color: session.processedCount > 0 ? bg : muted }]}>
@@ -301,21 +387,25 @@ export default function ClassifyScreen() {
         </View>
       </View>
 
-      {/* 底部目標列：上滑目標膠囊＋下滑目標 1~4 快捷 */}
+      {/* 上滑目標與四個扁平文字選項，下滑目標以高亮表示。 */}
       <AlbumBar
+        ref={albumBar}
+        onHover={setHighlightId}
         targets={session.targets}
         selectedId={session.selectedTargetId}
         downTargetId={session.downTargetId}
-        onSelect={session.selectTarget}
-        onSelectDown={session.selectDownTarget}
-        onAdd={session.addTarget}
+        shortcutIds={session.shortcutIds}
+        onClassify={quickClassify}
+        onLongPress={showAlbumFullName}
         sourceId={session.source.id}
-        onOrderChanged={() => void session.refreshTargets()}
-        dropMode={false}
-        highlightId={null}
+        onOrderChanged={session.refreshTargets}
+        dropMode={dropMode}
+        highlightId={highlightId}
         expanded={expanded}
         onToggleExpand={toggleExpand}
       />
+      </ScrollView>
+      </View>
 
       <SourceAlbumPicker
         visible={pickerVisible}
@@ -390,8 +480,8 @@ const styles = StyleSheet.create({
   sourceText: { fontSize: 17, fontWeight: '700', flexShrink: 1 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 },
   iconBtn: {
-    width: 34,
-    height: 34,
+    width: 44,
+    height: 44,
     borderRadius: 17,
     borderWidth: 1,
     alignItems: 'center',
@@ -407,10 +497,12 @@ const styles = StyleSheet.create({
   },
   subBar: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 7,
+    paddingVertical: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   sortPill: {
@@ -426,7 +518,6 @@ const styles = StyleSheet.create({
   photoArea: { flex: 1, minHeight: 0, alignItems: 'center', justifyContent: 'center' },
   notice: {
     position: 'absolute',
-    top: 132,
     alignSelf: 'center',
     backgroundColor: 'rgba(0,0,0,0.78)',
     borderRadius: 8,
@@ -437,20 +528,25 @@ const styles = StyleSheet.create({
   },
   noticeText: { color: '#fff', fontSize: 13, textAlign: 'center' },
   toolbar: {
+    paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 6,
+    paddingVertical: 2,
   },
   toolbarDock: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    gap: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 7,
+    paddingHorizontal: 6,
+    paddingVertical: 0,
+    gap: 4,
   },
   dockBtn: {
+    flex: 1,
+    minHeight: 40,
+    justifyContent: 'center',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
@@ -463,6 +559,7 @@ const styles = StyleSheet.create({
   dockText: {
     fontSize: 13,
     fontWeight: '600',
+    flexShrink: 1,
   },
   dockDivider: {
     width: 1,

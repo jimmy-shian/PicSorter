@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/theme';
@@ -10,6 +11,8 @@ interface Props {
   cancelText?: string;
   destructive?: boolean;
   busy?: boolean;
+  children?: ReactNode;
+  destructiveHint?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -26,6 +29,8 @@ export function ConfirmDialog({
   cancelText = '取消',
   destructive = false,
   busy = false,
+  children,
+  destructiveHint = '照片本身不受影響，只清除本機整理紀錄',
   onConfirm,
   onCancel,
 }: Props) {
@@ -41,6 +46,7 @@ export function ConfirmDialog({
           ]}>
           <Text style={[styles.title, { color: text }]}>{title}</Text>
           {message ? <Text style={[styles.message, { color: muted }]}>{message}</Text> : null}
+          {children}
           <View style={[styles.btnRow, { borderTopColor: border }]}>
             <Pressable
               style={[styles.btn, { backgroundColor: card }]}
@@ -58,7 +64,7 @@ export function ConfirmDialog({
             </Pressable>
           </View>
           {destructive ? (
-            <Text style={[styles.hint, { color: muted }]}>照片本身不受影響，只清除本機整理紀錄</Text>
+            <Text style={[styles.hint, { color: muted }]}>{destructiveHint}</Text>
           ) : null}
         </View>
       </View>
@@ -82,7 +88,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 17, fontWeight: '800' },
   message: { fontSize: 14, lineHeight: 21 },
   btnRow: { flexDirection: 'row', gap: 10, marginTop: 8, borderTopWidth: 0, paddingTop: 4 },
-  btn: { flex: 1, borderRadius: 10, paddingVertical: 13, alignItems: 'center' },
-  btnText: { fontSize: 15, fontWeight: '700' },
+  btn: { flex: 1, borderRadius: 10, paddingVertical: 13, paddingHorizontal: 8, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
+  btnText: { fontSize: 15, fontWeight: '700', textAlign: 'center' },
   hint: { fontSize: 11, textAlign: 'center', marginTop: 2 },
 });

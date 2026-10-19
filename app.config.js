@@ -37,7 +37,7 @@ module.exports = {
       package: 'com.picsorter.app',
       versionCode,
       adaptiveIcon: {
-        backgroundColor: '#E6F4FE',
+        backgroundColor: '#1174EB',
         foregroundImage: './assets/android-icon-foreground.png',
         backgroundImage: './assets/android-icon-background.png',
         monochromeImage: './assets/android-icon-monochrome.png',
@@ -52,6 +52,7 @@ module.exports = {
       'expo-status-bar',
       'expo-sqlite',
       'expo-image',
+      'expo-video',
       [
         'expo-navigation-bar',
         {

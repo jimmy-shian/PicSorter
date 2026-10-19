@@ -174,3 +174,50 @@ export function InfoIcon({ size = 18, color = '#000' }: CircleIconProps) {
     </Svg>
   );
 }
+
+/** 圖釘圖示（固定相簿用） */
+export function PinIcon({ size = 18, color = '#000', pinned = false }: CircleIconProps & { pinned?: boolean }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M16 3L8 11L5 10L3 12L7 16L2 21L3 22L8 17L12 21L14 19L13 16L21 8L16 3Z"
+        fill={pinned ? color : 'none'}
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+/** 眼睛圖示（顯示狀態） */
+export function EyeIcon({ size = 18, color = '#000' }: CircleIconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M2 12C3.8 7.5 7.5 4.5 12 4.5C16.5 4.5 20.2 7.5 22 12C20.2 16.5 16.5 19.5 12 19.5C7.5 19.5 3.8 16.5 2 12Z"
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Circle cx="12" cy="12" r="3.2" stroke={color} strokeWidth={1.8} fill="none" />
+    </Svg>
+  );
+}
+
+/** 眼睛斜線圖示（隱藏狀態） */
+export function EyeOffIcon({ size = 18, color = '#000' }: CircleIconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M3 3L21 21M10.5 10.67C9.97 11.2 9.65 11.93 9.65 12.73C9.65 14.35 10.97 15.67 12.59 15.67C13.39 15.67 14.12 15.35 14.65 14.82M6.54 6.64C4.6 7.97 3.03 9.83 2 12C3.8 16.5 7.5 19.5 12 19.5C14.07 19.5 16.01 18.86 17.63 17.73M9.88 5.14C10.57 4.96 11.27 4.86 12 4.86C16.5 4.86 20.2 7.86 22 12.36C21.24 14.24 20.03 15.86 18.5 17.07"
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}

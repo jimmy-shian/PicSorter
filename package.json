@@ -1,6 +1,6 @@
 {
   "name": "picsorter",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "main": "expo-router/entry",
   "dependencies": {
     "buffer": "^6.0.3",
@@ -9,6 +9,7 @@
     "expo-constants": "~57.0.21",
     "expo-dev-client": "~57.0.19",
     "expo-image": "~57.0.5",
+    "expo-intent-launcher": "~57.0.1",
     "expo-linking": "~57.0.12",
     "expo-media-library": "~57.0.5",
     "expo-navigation-bar": "~57.0.3",
@@ -16,6 +17,7 @@
     "expo-sqlite": "~57.0.4",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "57.0.4",
+    "expo-video": "~57.0.5",
     "react": "19.2.3",
     "react-native": "0.86.3",
     "react-native-gesture-handler": "~2.32.0",

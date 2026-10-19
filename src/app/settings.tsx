@@ -1,11 +1,12 @@
 import { useCallback, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import * as Application from 'expo-application';
 import { useTheme } from '@/lib/theme';
 import { useSession } from '@/lib/session-context';
+import { GestureAlbumSheet } from '@/components/GestureAlbumSheet';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   abandonSession,
@@ -13,7 +14,7 @@ import {
   getOpenSessions,
   type OpenSessionInfo,
 } from '@/lib/db';
-import type { GestureAction, GestureDirection, ThemeMode } from '@/types';
+import type { GestureAction, GestureDirection, MoveConfirmMode, ThemeMode } from '@/types';
 
 const GESTURE_DIRS: { dir: GestureDirection; label: string; icon: string }[] = [
   { dir: 'up', label: '向上滑動', icon: '↑' },
@@ -23,10 +24,10 @@ const GESTURE_DIRS: { dir: GestureDirection; label: string; icon: string }[] = [
 ];
 
 const GESTURE_ACTIONS: { action: GestureAction; label: string; desc: string }[] = [
-  { action: 'album', label: '放入上滑目標相簿', desc: '放入底部膠囊選定的上滑目標' },
+  { action: 'album', label: '放入上滑目標相簿', desc: '放入「分類手勢」設定的上滑目標' },
   { action: 'trash', label: '標記為待刪除', desc: '標記移入垃圾桶' },
   { action: 'skip', label: '略過此張', desc: '不作處理，前進下一張' },
-  { action: 'inspect', label: '放入下滑目標相簿', desc: '放入底部 1~4 選定的下滑目標（額外分類）' },
+  { action: 'inspect', label: '放入下滑目標相簿', desc: '放入「分類手勢」設定的下滑目標' },
   { action: 'none', label: '無動作 (關閉)', desc: '滑動不執行動作，彈回' },
 ];
 
@@ -57,9 +58,11 @@ export default function SettingsScreen() {
   const [busy, setBusy] = useState(false);
   const [discardTarget, setDiscardTarget] = useState<OpenSessionInfo | null>(null);
   const [clearAllVisible, setClearAllVisible] = useState(false);
+  const [preferenceError, setPreferenceError] = useState(false);
   const [resumeFailed, setResumeFailed] = useState(false);
 
   // 手勢方向設定 picker
+  const [gestureTargetsVisible, setGestureTargetsVisible] = useState(false);
   const [pickingDir, setPickingDir] = useState<GestureDirection | null>(null);
 
   const refresh = useCallback(async () => {
@@ -100,10 +103,15 @@ export default function SettingsScreen() {
     if (!discardTarget) return;
     const info = discardTarget;
     setDiscardTarget(null);
-    await abandonSession(db, info.id);
-    // 捨棄的正是目前工作時，重建一個乾淨工作，避免後續寫入孤兒列
-    if (info.id === session.sessionId) await session.restartFresh();
-    await refresh();
+    setBusy(true);
+    try {
+      await abandonSession(db, info.id);
+      // 捨棄的正是目前工作時，重建一個乾淨工作，避免後續寫入孤兒列
+      if (info.id === session.sessionId) await session.restartFresh();
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleClearAll = () => {
@@ -112,9 +120,14 @@ export default function SettingsScreen() {
 
   const confirmClearAll = async () => {
     setClearAllVisible(false);
-    await clearAllRecords(db);
-    await session.restartFresh();
-    await refresh();
+    setBusy(true);
+    try {
+      await clearAllRecords(db);
+      await session.restartFresh();
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
   };
 
   /** 選擇手勢動作：若與另一方向衝突則自動互換，none 允許多重 */
@@ -166,6 +179,10 @@ export default function SettingsScreen() {
         {/* ── 手勢方向自訂 ── */}
         <Text style={[styles.label, { color: muted }]}>手勢方向設定</Text>
         <View style={[styles.card, { borderColor: border, backgroundColor: card }]}>
+          <Pressable accessibilityRole="button" onPress={() => setGestureTargetsVisible(true)} style={styles.row}>
+            <Text style={[styles.rowText, { color: text }]}>分類相簿</Text>
+            <Text style={{ color: muted }}>›</Text>
+          </Pressable>
           {GESTURE_DIRS.map((g) => {
             const currentAction = session.gestureSettings[g.dir];
             return (
@@ -183,6 +200,31 @@ export default function SettingsScreen() {
           選擇已佔用的動作時會自動與原方向互換
         </Text>
 
+        <Text style={[styles.label, { color: muted }]}>移動確認</Text>
+        <View style={[styles.card, { borderColor: border, backgroundColor: card }]}>
+          {([
+            ['once', '全部一次確認', '同意後一次套用所有相簿移動'],
+            ['each', '每個相簿詢問', '每個相簿移動前都確認'],
+          ] as [MoveConfirmMode, string, string][]).map(([modeId, label, desc]) => (
+            <Pressable key={modeId} onPress={() => void session.updateMoveConfirmMode(modeId)} style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowText, { color: text }]}>{label}</Text>
+                <Text style={[styles.switchDesc, { color: muted }]}>{desc}</Text>
+              </View>
+              {session.moveConfirmMode === modeId ? <Text style={{ color: muted }}>✓</Text> : null}
+            </Pressable>
+          ))}
+        </View>
+
+
+        <Text style={[styles.label, { color: muted }]}>垃圾桶</Text>
+        <View style={[styles.card, { borderColor: border, backgroundColor: card }]}>
+          <View style={styles.row}>
+            <Text style={[styles.rowText, { color: text, flex: 1, paddingRight: 12 }]}>移入垃圾桶時不再詢問</Text>
+            <Switch accessibilityLabel="移入垃圾桶時不再詢問" value={!session.confirmBeforeTrash}
+              onValueChange={(value) => { void session.updateConfirmBeforeTrash(!value).catch(() => setPreferenceError(true)); }} />
+          </View>
+        </View>
 
         {/* ── 操作教學 ── */}
         <Text style={[styles.label, { color: muted }]}>操作教學</Text>
@@ -265,6 +307,9 @@ export default function SettingsScreen() {
         </View>
       </ScrollView>
 
+      {gestureTargetsVisible && <GestureAlbumSheet visible sourceId={session.source.id} anchor="up"
+        upId={session.selectedTargetId} downId={session.downTargetId} shortcutIds={session.shortcutIds}
+        onClose={() => setGestureTargetsVisible(false)} onSaved={session.refreshTargets} />}
       {/* ── 手勢動作選擇器 Modal ── */}
       <Modal visible={pickingDir !== null} transparent animationType="fade" onRequestClose={() => setPickingDir(null)}>
         <Pressable style={styles.pickerBackdrop} onPress={() => setPickingDir(null)}>
@@ -318,6 +363,7 @@ export default function SettingsScreen() {
         }
         confirmText="捨棄"
         destructive
+        busy={busy}
         onConfirm={() => void confirmDiscard()}
         onCancel={() => setDiscardTarget(null)}
       />
@@ -327,9 +373,12 @@ export default function SettingsScreen() {
         message="未套用的分類決定將一併清除（照片本身不受影響）。"
         confirmText="全部清除"
         destructive
+        busy={busy}
         onConfirm={() => void confirmClearAll()}
         onCancel={() => setClearAllVisible(false)}
       />
+      <ConfirmDialog visible={preferenceError} title="設定未儲存" message="請稍後再試。" confirmText="知道了"
+        onConfirm={() => setPreferenceError(false)} onCancel={() => setPreferenceError(false)} />
       <ConfirmDialog
         visible={resumeFailed}
         title="找不到該筆進度"
