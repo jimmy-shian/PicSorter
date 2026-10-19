@@ -15,6 +15,7 @@ import type {
   GestureAction,
   GestureDirection,
   GestureSettings,
+  MoveConfirmMode,
   SortOrder,
   SourceAlbum,
   TargetAlbum,
@@ -30,6 +31,7 @@ import {
 } from '@/lib/db';
 import { getPhotoPage, getItemById, listTargetAlbums, isRootDcim } from '@/lib/media';
 import { ensureOrderRows, getAlbumEntries } from '@/lib/album-order';
+import { loadGestureAlbumSettings } from '@/lib/gesture-album-storage';
 import {
   runApplyPipeline,
   type ApplyProgress,
@@ -40,6 +42,8 @@ export interface RunApplyOpts {
   onProgress?: (p: ApplyProgress) => void;
   isCancelled?: () => boolean;
   requestTrashConfirm?: (count: number) => Promise<'trash' | 'permanent' | 'skip'>;
+  albumConfirmMode?: 'once' | 'each';
+  requestAlbumConfirm?: (count: number, albumTitle: string | null, albumCount: number) => Promise<boolean>;
 }
 
 export interface Decision {
@@ -90,6 +94,7 @@ interface SessionState {
   targets: TargetAlbum[];
   selectedTargetId: string | null;
   downTargetId: string | null;
+  shortcutIds: string[];
   decisions: Map<string, Decision>;
   trashCount: number;
   processedCount: number;
@@ -101,9 +106,11 @@ interface SessionState {
   selectDownTarget: (id: string) => void;
   refreshTargets: () => Promise<void>;
   addTarget: (t: TargetAlbum) => Promise<void>;
+  /** 從系統相片檢視器返回時，同步目前照片是否仍存在。 */
+  refreshCurrentAsset: () => Promise<'available' | 'missing' | 'none'>;
   classifyCurrent: (action: DecisionAction, targetId?: string) => Promise<boolean>;
-  /** 左滑略過：不寫 DB，只前進到下一張（可撤銷退回） */
-  skipCurrent: () => boolean;
+  /** 左滑略過：留下 skip 紀錄避免恢復工作時再次出現，但不會進入套用管線 */
+  skipCurrent: () => Promise<boolean>;
   undo: () => Promise<void>;
   loadMore: () => Promise<void>;
   /**
@@ -128,6 +135,10 @@ interface SessionState {
   reloadDecisions: () => Promise<void>;
   gestureSettings: GestureSettings;
   updateGestureSetting: (dir: GestureDirection, action: GestureAction) => Promise<void>;
+  confirmBeforeTrash: boolean;
+  updateConfirmBeforeTrash: (value: boolean) => Promise<void>;
+  moveConfirmMode: MoveConfirmMode;
+  updateMoveConfirmMode: (mode: MoveConfirmMode) => Promise<void>;
   showAllAlbums: boolean;
   setShowAllAlbums: (b: boolean) => Promise<void>;
   tutorialVisible: boolean;
@@ -151,7 +162,7 @@ export const DEFAULT_GESTURES: GestureSettings = {
 function toDecision(r: DecisionRow): Decision {
   return {
     assetId: r.asset_id,
-    action: r.action === 'trash' ? 'trash' : 'album',
+    action: r.action === 'trash' ? 'trash' : r.action === 'skip' ? 'skip' : 'album',
     targetAlbumId: r.target_album_id,
     targetAlbumTitle: r.target_album_title,
     uri: r.uri ?? null,
@@ -178,11 +189,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [targets, setTargets] = useState<TargetAlbum[]>([]);
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const [downTargetId, setDownTargetId] = useState<string | null>(null);
+  const [shortcutIds, setShortcutIds] = useState<string[]>([]);
   const [decisions, setDecisions] = useState<Map<string, Decision>>(new Map());
   const [canUndo, setCanUndo] = useState(false);
 
   // 偏好設定與教學
   const [gestureSettings, setGestureSettings] = useState<GestureSettings>(DEFAULT_GESTURES);
+  const [confirmBeforeTrash, setConfirmBeforeTrash] = useState(true);
+  const [moveConfirmMode, setMoveConfirmMode] = useState<MoveConfirmMode>('once');
   const [showAllAlbums, setShowAllAlbumsState] = useState(true);
   const [tutorialVisible, setTutorialVisible] = useState(false);
 
@@ -195,13 +209,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         const right = (await getPref(db, 'gesture_right', 'trash')) as GestureAction;
         setGestureSettings({ up, down, left, right });
 
+        setConfirmBeforeTrash((await getPref(db, 'confirmBeforeTrash', 'true')) !== 'false');
+        const confirmMode = (await getPref(db, 'move_confirm_mode', 'once')) as MoveConfirmMode;
+        setMoveConfirmMode(confirmMode === 'each' ? 'each' : 'once');
+
         const showAll = (await getPref(db, 'show_all_albums', 'true')) === 'true';
         setShowAllAlbumsState(showAll);
 
-        const savedDownTarget = await getPref(db, 'down_target_id', '');
-        if (savedDownTarget) {
-          setDownTargetId(savedDownTarget);
-        }
+        // 手勢相簿目標由 loadTargets 統一讀取，避免啟動偏好載入覆蓋有效性檢查。
 
         const seenTut = (await getPref(db, 'has_seen_tutorial', 'false')) === 'true';
         if (!seenTut) {
@@ -221,12 +236,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [db],
   );
 
+  const updateMoveConfirmMode = useCallback(
+    async (mode: MoveConfirmMode) => {
+      setMoveConfirmMode(mode);
+      await setPref(db, 'move_confirm_mode', mode);
+    },
+    [db],
+  );
+
+  const updateConfirmBeforeTrash = useCallback(async (value: boolean) => {
+    await setPref(db, 'confirmBeforeTrash', String(value));
+    setConfirmBeforeTrash(value);
+  }, [db]);
+
   const selectDownTarget = useCallback(
     (id: string) => {
+      if (!targets.some((album) => album.id === id)) return;
       setDownTargetId(id);
       void setPref(db, 'down_target_id', id);
     },
-    [db],
+    [db, targets],
   );
 
   const setShowAllAlbums = useCallback(
@@ -238,16 +267,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         const { visible } = await getAlbumEntries(db, live);
         const list: TargetAlbum[] = visible.map((e) => ({ id: e.id, title: e.title }));
         setTargets(list);
-        setSelectedTargetId((prev) => {
-          if (prev && list.some((t) => t.id === prev)) return prev;
-          return list[0]?.id ?? null;
-        });
-        setDownTargetId((prev) => {
-          if (prev && list.some((t) => t.id === prev)) return prev;
-          const fallback = list[0]?.id ?? null;
-          if (fallback) void setPref(db, 'down_target_id', fallback);
-          return fallback;
-        });
+        const settings = await loadGestureAlbumSettings(db, list);
+        setSelectedTargetId(settings.upId);
+        setShortcutIds(settings.shortcutIds);
+        setDownTargetId(settings.downId);
       } catch {
         // ignore
       }
@@ -288,28 +311,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadTargets = useCallback(
-    async (excludeAlbumId: string | null) => {
+    async (excludeAlbumId: string | null, strict = false) => {
       try {
         // P4：系統相簿套用本機自訂順序（固定→一般，隱藏的不顯示）
         const live = await listTargetAlbums(excludeAlbumId, showAllAlbums);
         const { visible } = await getAlbumEntries(db, live);
         const list: TargetAlbum[] = visible.map((e) => ({ id: e.id, title: e.title }));
         setTargets(list);
-        setSelectedTargetId((prev) => {
-          if (prev && list.some((t) => t.id === prev)) return prev;
-          return list[0]?.id ?? null;
-        });
-        setDownTargetId((prev) => {
-          if (prev && list.some((t) => t.id === prev)) return prev;
-          const fallback = list[0]?.id ?? null;
-          if (fallback) void setPref(db, 'down_target_id', fallback);
-          return fallback;
-        });
-      } catch {
+        const settings = await loadGestureAlbumSettings(db, list);
+        setSelectedTargetId(settings.upId);
+        setShortcutIds(settings.shortcutIds);
+        setDownTargetId(settings.downId);
+      } catch (error) {
+        if (strict) throw error;
         // 讀取系統相簿失敗（權限異動等）：不斷線，給空目標讓畫面可用
         setTargets([]);
         setSelectedTargetId(null);
         setDownTargetId(null);
+        setShortcutIds([]);
       }
     },
     [db, showAllAlbums],
@@ -354,7 +373,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         const hist: { id: string; skipped: boolean }[] = [];
         for (const r of pre) {
           map.set(r.asset_id, toDecision(r));
-          hist.push({ id: r.asset_id, skipped: false });
+          hist.push({ id: r.asset_id, skipped: r.action === 'skip' });
         }
         historyRef.current = hist;
         setCanUndo(hist.length > 0);
@@ -509,20 +528,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [startSession],
   );
 
-  const selectTarget = useCallback((id: string) => setSelectedTargetId(id), []);
+  const selectTarget = useCallback((id: string) => {
+    setSelectedTargetId(id);
+    void setPref(db, 'up_target_id', id);
+  }, [db]);
 
   /** 新增相簿後立即持久化排序列（接在最後），再重載並選為目標 */
+  // 改版：只加入列表並重載，保留既有手勢目標。
   const addTarget = useCallback(
     async (t: TargetAlbum) => {
       await ensureOrderRows(db, [{ id: t.id, title: t.title }]);
       await loadTargets(sourceRef.current.id);
-      setSelectedTargetId(t.id);
+      // 新增相簿只加入列表；保留原有手勢目標。
     },
     [db, loadTargets],
   );
 
   const refreshTargets = useCallback(async () => {
-    await loadTargets(sourceRef.current.id);
+    await loadTargets(sourceRef.current.id, true);
   }, [loadTargets]);
 
   const loadMore = useCallback(async () => {
@@ -543,6 +566,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     }
   }, [decisions, hasMore, loading]);
+
+  const refreshCurrentAsset = useCallback(async (): Promise<'available' | 'missing' | 'none'> => {
+    const current = queueRef.current[indexRef.current];
+    if (!current) return 'none';
+    const latest = await getItemById(current.assetId).catch(() => null);
+    if (latest) {
+      const next = [...queueRef.current];
+      next[indexRef.current] = latest;
+      queueRef.current = next;
+      setQueue(next);
+      return 'available';
+    }
+
+    // 外部檢視器已刪除這張照片：從待處理列移除，索引留在原位以顯示下一張。
+    const next = [...queueRef.current];
+    next.splice(indexRef.current, 1);
+    queueRef.current = next;
+    setQueue(next);
+    return 'missing';
+  }, []);
 
   /** 每次分類立即寫入 SQLite（規格 4.1 自動保存），回傳是否成功 */
   const classifyCurrent = useCallback(
@@ -631,15 +674,39 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [db, selectedTargetId, targets],
   );
 
-  const skipCurrent = useCallback((): boolean => {
+  const skipCurrent = useCallback(async (): Promise<boolean> => {
     const item = queueRef.current[indexRef.current];
-    if (!item) return false;
+    const sid = sessionRef.current;
+    if (!item || !sid) return false;
+    await db.runAsync(
+      `INSERT INTO decisions (session_id, asset_id, action, target_album_id, target_album_title, created_at, applied, uri, width, height)
+       VALUES (?, ?, 'skip', NULL, NULL, ?, 1, ?, ?, ?)
+       ON CONFLICT(session_id, asset_id) DO UPDATE SET action='skip', target_album_id=NULL, target_album_title=NULL, applied=1, uri=excluded.uri, width=excluded.width, height=excluded.height`,
+      sid,
+      item.assetId,
+      Date.now(),
+      item.uri,
+      item.width,
+      item.height,
+    );
+    setDecisions((prev) => new Map(prev).set(item.assetId, {
+      assetId: item.assetId,
+      action: 'skip',
+      targetAlbumId: null,
+      targetAlbumTitle: null,
+      uri: item.uri,
+      width: item.width,
+      height: item.height,
+      applied: true,
+      failed: 0,
+      lastError: null,
+    }));
     historyRef.current.push({ id: item.assetId, skipped: true });
     setCanUndo(true);
     indexRef.current += 1;
     setIndex(indexRef.current);
     return true;
-  }, []);
+  }, [db]);
 
   const undo = useCallback(async () => {
     if (undoLockRef.current) return;
@@ -649,8 +716,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (!last || !sid) return;
     undoLockRef.current = true;
     try {
-      // 略過沒有寫 DB：直接退回 index 即可
+      // 略過會留下不套用的 skip 紀錄；撤銷時刪除紀錄並把照片放回佇列。
       if (last.skipped) {
+        await db.runAsync('DELETE FROM decisions WHERE session_id = ? AND asset_id = ? AND action = \'skip\'', sid, last.id);
+        setDecisions((prev) => {
+          const next = new Map(prev);
+          next.delete(last.id);
+          return next;
+        });
+        const exists = queueRef.current.some((q) => q.assetId === last.id);
+        if (!exists) {
+          const restored = await getItemById(last.id).catch(() => null);
+          if (restored) {
+            const at = Math.min(indexRef.current, queueRef.current.length);
+            const next = [...queueRef.current];
+            next.splice(at, 0, restored);
+            queueRef.current = next;
+            setQueue(next);
+            return;
+          }
+        }
         indexRef.current = Math.max(0, indexRef.current - 1);
         setIndex(indexRef.current);
         return;
@@ -835,6 +920,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       targets,
       selectedTargetId,
       downTargetId,
+      shortcutIds,
       decisions,
       trashCount,
       processedCount,
@@ -846,6 +932,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       selectDownTarget,
       refreshTargets,
       addTarget,
+      refreshCurrentAsset,
       classifyCurrent,
       skipCurrent,
       undo,
@@ -857,6 +944,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       reloadDecisions,
       gestureSettings,
       updateGestureSetting,
+      confirmBeforeTrash,
+      updateConfirmBeforeTrash,
+      moveConfirmMode,
+      updateMoveConfirmMode,
       showAllAlbums,
       setShowAllAlbums,
       tutorialVisible,
@@ -884,6 +975,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     targets,
     selectedTargetId,
     downTargetId,
+    shortcutIds,
     setSource,
     setSortOrder,
     setLimitedAccess,
@@ -891,6 +983,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     selectDownTarget,
     refreshTargets,
     addTarget,
+    refreshCurrentAsset,
     classifyCurrent,
     skipCurrent,
     undo,
@@ -902,6 +995,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     reloadDecisions,
     gestureSettings,
     updateGestureSetting,
+    confirmBeforeTrash,
+    updateConfirmBeforeTrash,
+    moveConfirmMode,
+    updateMoveConfirmMode,
     showAllAlbums,
     setShowAllAlbums,
     tutorialVisible,

@@ -1,6 +1,6 @@
 export type SortOrder = 'newest' | 'oldest';
 
-export type DecisionAction = 'album' | 'trash';
+export type DecisionAction = 'album' | 'trash' | 'skip';
 
 export interface SourceAlbum {
   /** expo-media-library Album.id；「所有照片」用 null 表示 */
@@ -18,6 +18,7 @@ export interface TargetAlbum {
 export interface ClassifyItem {
   assetId: string;
   uri: string;
+  fallbackUri?: string;
   width: number;
   height: number;
   creationTime: number | null;
@@ -39,3 +40,4 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 export type GestureAction = 'album' | 'trash' | 'skip' | 'inspect' | 'none';
 export type GestureDirection = 'up' | 'down' | 'left' | 'right';
 export type GestureSettings = Record<GestureDirection, GestureAction>;
+export type MoveConfirmMode = 'once' | 'each';

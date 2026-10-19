@@ -121,13 +121,17 @@ const OPEN_SESSION_COLUMNS = `
 
 export async function getLatestOpenSession(db: SQLite.SQLiteDatabase): Promise<OpenSessionInfo | null> {
   return db.getFirstAsync<OpenSessionInfo>(
-    `SELECT ${OPEN_SESSION_COLUMNS} FROM sessions s WHERE s.status = 'open' ORDER BY s.created_at DESC LIMIT 1`,
+    `SELECT ${OPEN_SESSION_COLUMNS} FROM sessions s
+     WHERE s.status = 'open' AND EXISTS (SELECT 1 FROM decisions d WHERE d.session_id = s.id)
+     ORDER BY s.created_at DESC LIMIT 1`,
   );
 }
 
 export async function getOpenSessions(db: SQLite.SQLiteDatabase): Promise<OpenSessionInfo[]> {
   return db.getAllAsync<OpenSessionInfo>(
-    `SELECT ${OPEN_SESSION_COLUMNS} FROM sessions s WHERE s.status = 'open' ORDER BY s.created_at DESC`,
+    `SELECT ${OPEN_SESSION_COLUMNS} FROM sessions s
+     WHERE s.status = 'open' AND EXISTS (SELECT 1 FROM decisions d WHERE d.session_id = s.id)
+     ORDER BY s.created_at DESC`,
   );
 }
 
