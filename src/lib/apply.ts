@@ -2,7 +2,8 @@ import type * as SQLite from 'expo-sqlite';
 import { Album } from 'expo-media-library';
 import { applyAddToAlbum } from '@/lib/media';
 import { moveAssetsToTrash, permanentlyDeleteAssets } from '@/lib/trash';
-import { finishSession, getPref, setPref } from '@/lib/db';
+import { finishSession } from '@/lib/db';
+import { replaceVirtualAlbumId } from '@/lib/gesture-album-storage';
 
 /**
  * P6 套用管線（規格 §3.4）：把待執行紀錄真正寫入系統。
@@ -219,12 +220,7 @@ export async function runApplyPipeline(
       try {
         const realId = await applyAddToAlbum(activeAlbumId, ids, title);
         if (activeAlbumId.startsWith('virtual:') && realId && !realId.startsWith('virtual:')) {
-          await db.runAsync('UPDATE album_order SET album_id = ? WHERE album_id = ?', realId, activeAlbumId);
-          await db.runAsync('UPDATE decisions SET target_album_id = ? WHERE target_album_id = ?', realId, activeAlbumId);
-          const up = await getPref(db, 'up_target_id');
-          if (up === activeAlbumId) await setPref(db, 'up_target_id', realId);
-          const down = await getPref(db, 'down_target_id');
-          if (down === activeAlbumId) await setPref(db, 'down_target_id', realId);
+          await replaceVirtualAlbumId(db, activeAlbumId, realId);
           activeAlbumId = realId;
         }
         await markApplied(db, sessionId, ids);
@@ -238,8 +234,7 @@ export async function runApplyPipeline(
           try {
             const realId = await applyAddToAlbum(activeAlbumId, [id], title);
             if (activeAlbumId.startsWith('virtual:') && realId && !realId.startsWith('virtual:')) {
-              await db.runAsync('UPDATE album_order SET album_id = ? WHERE album_id = ?', realId, activeAlbumId);
-              await db.runAsync('UPDATE decisions SET target_album_id = ? WHERE target_album_id = ?', realId, activeAlbumId);
+              await replaceVirtualAlbumId(db, activeAlbumId, realId);
               activeAlbumId = realId;
             }
             await markApplied(db, sessionId, [id]);

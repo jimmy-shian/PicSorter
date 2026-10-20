@@ -1,5 +1,16 @@
 export interface DropRect { x: number; y: number; width: number; height: number }
 
+/** 與等寬 flex 快捷列一致，空位不佔寬度，項目間距不算拖曳目標。 */
+export function albumDropRects(ids: string[], bounds: DropRect, gap: number): Map<string, DropRect> {
+  const rects = new Map<string, DropRect>();
+  if (!ids.length) return rects;
+  const width = Math.max(0, (bounds.width - gap * (ids.length - 1)) / ids.length);
+  ids.forEach((id, index) => rects.set(id, {
+    ...bounds, x: bounds.x + index * (width + gap), width,
+  }));
+  return rects;
+}
+
 export function hitAlbum(rects: Map<string, DropRect>, x: number, y: number): string | null {
   for (const [id, rect] of rects) {
     if (x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height) return id;

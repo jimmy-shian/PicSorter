@@ -6,20 +6,32 @@ const vm = require('node:vm');
 const ts = require('typescript');
 const { DatabaseSync } = require('node:sqlite');
 
-function pipeline(outcome) {
+function pipeline(outcome, albumOptions = null) {
   const sqlite = new DatabaseSync(':memory:');
   sqlite.exec(`CREATE TABLE decisions (session_id TEXT, asset_id TEXT, action TEXT, target_album_id TEXT,
     target_album_title TEXT, applied INTEGER DEFAULT 0, failed INTEGER DEFAULT 0, last_error TEXT);
     INSERT INTO decisions (session_id, asset_id, action) VALUES ('session', 'photo', 'trash');`);
+  if (albumOptions) {
+    sqlite.exec("DELETE FROM decisions; INSERT INTO decisions (session_id, asset_id, action, target_album_id, target_album_title) VALUES ('session', 'one', 'album', 'virtual:trip', 'Trip'), ('session', 'two', 'album', 'virtual:trip', 'Trip');");
+  }
   const db = {
     getFirstAsync: async (sql, ...args) => sqlite.prepare(sql).get(...args) ?? null,
     getAllAsync: async (sql, ...args) => sqlite.prepare(sql).all(...args),
     runAsync: async (sql, ...args) => sqlite.prepare(sql).run(...args),
   };
-  const calls = { system: 0, permanent: 0, finished: 0 };
+  const calls = { system: 0, permanent: 0, finished: 0, albums: [], replacements: [] };
   const mocks = {
     'expo-media-library': { Album: { getAll: async () => [] } },
-    '@/lib/media': { applyAddToAlbum: async () => { throw new Error('unexpected album operation'); } },
+    '@/lib/media': { applyAddToAlbum: async (albumId, ids) => {
+      assert.ok(albumOptions, 'unexpected album operation');
+      calls.albums.push({ albumId, ids });
+      if (albumOptions.failBatch && ids.length > 1) throw new Error('Injected batch failure');
+      return 'real-trip';
+    } },
+    '@/lib/gesture-album-storage': { replaceVirtualAlbumId: async (database, virtualId, realId) => {
+      assert.strictEqual(database, db);
+      calls.replacements.push([virtualId, realId]);
+    } },
     '@/lib/trash': {
       moveAssetsToTrash: async (ids) => { calls.system++; assert.deepEqual(ids, ['photo']); return outcome; },
       permanentlyDeleteAssets: async () => { calls.permanent++; throw new Error('must not permanently delete'); },
@@ -68,3 +80,16 @@ test('取消 App 確認時不呼叫系統也不結案', async (t) => {
   assert.equal(result.pendingCount, 1);
   assert.equal(p.calls.finished, 0);
 });
+
+for (const failBatch of [false, true]) {
+  test(`虛擬相簿${failBatch ? '批次失敗後逐張重試' : '批次成功'}共用 ID 與偏好更新流程`, async (t) => {
+    const p = pipeline(null, { failBatch }); t.after(p.close);
+    const result = await p.run();
+    assert.equal(result.appliedAlbum, 2);
+    assert.equal(result.pendingCount, 0);
+    assert.deepEqual(p.calls.replacements, [['virtual:trip', 'real-trip']]);
+    if (failBatch) {
+      assert.deepEqual(p.calls.albums.map((call) => call.albumId), ['virtual:trip', 'virtual:trip', 'real-trip']);
+    }
+  });
+}

@@ -396,6 +396,7 @@ export default function ClassifyScreen() {
         downTargetId={session.downTargetId}
         shortcutIds={session.shortcutIds}
         onClassify={quickClassify}
+        onSelectDownTarget={session.selectDownTarget}
         onLongPress={showAlbumFullName}
         sourceId={session.source.id}
         onOrderChanged={session.refreshTargets}

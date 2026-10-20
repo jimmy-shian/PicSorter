@@ -22,14 +22,14 @@ function load(relative) {
   return module.exports;
 }
 const { normalizeGestureDraft, toggleShortcut, assignShortcutSlot, clearShortcut, parseShortcutIds, reorderAlbumGroup, albumDisplayGroups } = load('gesture-albums');
-const { loadGestureAlbumSettings, saveGestureAlbumSettings } = load('gesture-album-storage');
+const { loadGestureAlbumSettings, saveGestureAlbumSettings, replaceVirtualAlbumId } = load('gesture-album-storage');
 const entry = (id, sortIndex = 0, extra = {}) => ({ id, title: id, sortIndex, pinned: false, hidden: false, ...extra });
 const entries = ['a', 'b', 'c', 'd', 'e'].map((id, index) => entry(id, index));
 const draft = (patch = {}) => ({ entries, upId: 'a', shortcutIds: ['b', 'c'], downId: 'c', ...patch });
 
 function database() {
   const sqlite = new DatabaseSync(':memory:');
-  sqlite.exec('CREATE TABLE prefs (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE album_order (album_id TEXT PRIMARY KEY, title TEXT NOT NULL, sort_index INTEGER NOT NULL, pinned INTEGER NOT NULL, hidden INTEGER NOT NULL);');
+  sqlite.exec('CREATE TABLE prefs (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE album_order (album_id TEXT PRIMARY KEY, title TEXT NOT NULL, sort_index INTEGER NOT NULL, pinned INTEGER NOT NULL, hidden INTEGER NOT NULL); CREATE TABLE decisions (target_album_id TEXT);');
   const adapter = {
     failKey: null,
     getFirstAsync: async (sql, ...values) => sqlite.prepare(sql).get(...values) ?? null,
@@ -105,7 +105,7 @@ test('一般排序只交換群組中的位置，保留快捷、目標及固定�
 test('快捷偏好解析處理毀損資料與重複 ID', () => {
   assert.deepEqual(parseShortcutIds('{bad'), []);
   assert.deepEqual(parseShortcutIds('{}'), []);
-  assert.deepEqual(parseShortcutIds('["a","a",3,null,"b"]'), ['a', 'b']);
+  assert.deepEqual(parseShortcutIds('["a","a",3,null,"b"]'), ['a', '', 'b']);
 });
 
 test('舊版首次初始化第 2～5 個，後續一般排序不重排快捷', async (t) => {
@@ -154,7 +154,7 @@ test('下滑目標可獨立於四個快捷保存並重新載入', async (t) => {
   assert.equal(reloaded.downId, 'e');
   assert.deepEqual(reloaded.shortcutIds, ['a', 'b', 'c', 'd']);
 });
-const { edgeScroll, reorderIndex, hitAlbum } = load('drag-geometry');
+const { edgeScroll, reorderIndex, hitAlbum, albumDropRects } = load('drag-geometry');
 test('邊緣捲動 48dp 啟動、64dp 才停止，上下邊界對稱', () => {
   assert.equal(edgeScroll(49, 0, 600, 0).direction, 0);
   assert.equal(edgeScroll(47, 0, 600, 0).direction, -1);
@@ -218,5 +218,69 @@ test('assignShortcutSlot 正確指派與互換快捷位置', () => {
 
   // 清除 'd' 的快捷
   const cleared = clearShortcut(replaced, 'd');
-  assert.deepEqual(cleared.shortcutIds, ['c', 'a']);
+  assert.deepEqual(cleared.shortcutIds, ['c', '', 'a']);
+});
+
+test('指定快捷 4 與移動至空位不會壓縮編號，清除後保留其他位置', () => {
+  const assigned = assignShortcutSlot(draft({ shortcutIds: ['a'] }), 'd', 3);
+  assert.deepEqual(assigned.shortcutIds, ['a', '', '', 'd']);
+  const moved = assignShortcutSlot(assigned, 'a', 2);
+  assert.deepEqual(moved.shortcutIds, ['', '', 'a', 'd']);
+  assert.deepEqual(clearShortcut(moved, 'a').shortcutIds, ['', '', '', 'd']);
+  assert.deepEqual(clearShortcut(clearShortcut(moved, 'a'), 'd').shortcutIds, []);
+  assert.strictEqual(assignShortcutSlot(assigned, 'b', 4), assigned);
+  assert.strictEqual(assignShortcutSlot(assigned, 'b', -1), assigned);
+});
+
+test('快捷空位在保存與重新載入後維持原編號，下滑目標略過空位', async (t) => {
+  const db = database(); t.after(db.close);
+  const original = draft({ shortcutIds: ['', 'b', '', 'd'], downId: null });
+  await saveGestureAlbumSettings(db, original);
+  const reloaded = await loadGestureAlbumSettings(db, entries);
+  assert.deepEqual(reloaded.shortcutIds, ['', 'b', '', 'd']);
+  assert.equal(reloaded.downId, 'b');
+  const hidden = normalizeGestureDraft({ ...original, entries: entries.map((e) => e.id === 'b' ? { ...e, hidden: true } : e) });
+  assert.deepEqual(hidden.shortcutIds, ['', '', '', 'd']);
+  assert.equal(hidden.downId, 'd');
+});
+
+test('三個快捷平均分配整列寬度，拖曳範圍包含加寬區且排除間距', () => {
+  const bounds = { x: 12, y: 500, width: 312, height: 60 };
+  const rects = albumDropRects(['a', 'c', 'd'], bounds, 6);
+  assert.equal(rects.get('a').width, 100);
+  assert.equal(rects.get('d').x + rects.get('d').width, 324);
+  assert.equal(hitAlbum(rects, 108, 530), 'a');
+  assert.equal(hitAlbum(rects, 114, 530), null);
+  assert.equal(hitAlbum(rects, 120, 530), 'c');
+  assert.equal(albumDropRects(['d'], bounds, 6).get('d').width, 312);
+  assert.equal(albumDropRects([], bounds, 6).size, 0);
+});
+
+test('虛擬相簿轉為實體時同步所有目標與快捷，保留快捷空位', async (t) => {
+  const db = database(); t.after(db.close);
+  const virtualId = 'virtual:trip';
+  await saveGestureAlbumSettings(db, draft({ entries: [...entries, entry(virtualId)], upId: virtualId,
+    downId: virtualId, shortcutIds: ['', 'b', '', virtualId] }));
+  await db.runAsync('INSERT INTO decisions (target_album_id) VALUES (?)', virtualId);
+  await replaceVirtualAlbumId(db, virtualId, 'real-trip');
+  const reloaded = await loadGestureAlbumSettings(db, [...entries, entry('real-trip')]);
+  assert.equal(reloaded.upId, 'real-trip');
+  assert.equal(reloaded.downId, 'real-trip');
+  assert.deepEqual(reloaded.shortcutIds, ['', 'b', '', 'real-trip']);
+  assert.equal(db.all('SELECT * FROM decisions')[0].target_album_id, 'real-trip');
+  assert.ok(db.all('SELECT * FROM album_order').some((e) => e.album_id === 'real-trip'));
+});
+
+test('相簿 ID 更新途中失敗會還原相簿、分類與全部偏好', async (t) => {
+  const db = database(); t.after(db.close);
+  const virtualId = 'virtual:trip';
+  await saveGestureAlbumSettings(db, draft({ entries: [...entries, entry(virtualId)], upId: virtualId,
+    downId: virtualId, shortcutIds: ['b', virtualId] }));
+  await db.runAsync('INSERT INTO decisions (target_album_id) VALUES (?)', virtualId);
+  const before = db.all('SELECT * FROM prefs ORDER BY key');
+  db.failKey = 'down_shortcut_ids';
+  await assert.rejects(replaceVirtualAlbumId(db, virtualId, 'real-trip'), /disk write failure/);
+  assert.deepEqual(db.all('SELECT * FROM prefs ORDER BY key'), before);
+  assert.equal(db.all('SELECT * FROM decisions')[0].target_album_id, virtualId);
+  assert.ok(db.all('SELECT * FROM album_order').some((e) => e.album_id === virtualId));
 });

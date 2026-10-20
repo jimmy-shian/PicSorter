@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme';
 import { GestureAlbumSheet } from './GestureAlbumSheet';
-import { hitAlbum, type DropRect } from '@/lib/drag-geometry';
+import { albumDropRects, hitAlbum, type DropRect } from '@/lib/drag-geometry';
 import type { TargetAlbum } from '@/types';
 
 const ACCENT = '#168BFF';
@@ -23,7 +23,7 @@ interface Props {
   /** 長按晶片：通知父層顯示完整相簿名稱（頂部通知），不觸發分類 */
   onLongPress: (id: string) => void;
   /** 點選快捷晶片：切換下滑目標，不立即分類 */
-  onSelectDownTarget?: (id: string) => void;
+  onSelectDownTarget: (id: string) => void;
   sourceId: string | null;
   onOrderChanged: () => void | Promise<void>;
   dropMode: boolean;
@@ -46,7 +46,7 @@ function AlbumTarget({ album, index, hover, selected, dropMode, onPress, onLongP
       onLongPress={album ? () => onLongPress(album.id) : undefined}
       delayLongPress={350}
       disabled={dropMode} accessibilityRole="button"
-      accessibilityLabel={album ? `快捷 ${index + 1}：${album.title}${selected ? '，目前下滑目標' : ''}，點選分類或拖曳照片放入` : `設定快捷 ${index + 1}`}
+      accessibilityLabel={album ? `快捷 ${index + 1}：${album.title}${selected ? '，目前下滑目標' : ''}，點選設為下滑目標或拖曳照片放入` : `設定快捷 ${index + 1}`}
       accessibilityHint={album ? '長按顯示完整相簿名稱' : undefined}
       accessibilityState={{ selected }}
       style={[styles.album, {
@@ -77,7 +77,9 @@ export const AlbumBar = forwardRef<AlbumBarHandle, Props>(function AlbumBar(prop
   const [anchor, setAnchor] = useState<'up' | 'down'>('up');
   const row = useRef<View>(null);
   const bounds = useRef({ x: 0, y: 0, width: 0, height: 0 });
-  const slots = Array.from({ length: 4 }, (_, index) => props.targets.find((album) => album.id === props.shortcutIds[index]) ?? null);
+  const slots = props.shortcutIds.map((id, index) => ({
+    album: props.targets.find((album) => album.id === id), index,
+  })).filter((slot): slot is { album: TargetAlbum; index: number } => !!slot.album);
   const layout = useRef(slots);
   useLayoutEffect(() => { layout.current = slots; });
   const measure = useCallback(() => {
@@ -99,18 +101,9 @@ export const AlbumBar = forwardRef<AlbumBarHandle, Props>(function AlbumBar(prop
     const hitBottom = b.y + b.height + 70;
     if (point.y < hitTop || point.y > hitBottom) return null;
 
-    const slotWidth = b.width / 4;
-    const rects = new Map<string, DropRect>();
-    layout.current.forEach((album, index) => {
-      if (album) {
-        rects.set(album.id, {
-          x: b.x + index * slotWidth,
-          y: hitTop,
-          width: slotWidth,
-          height: hitBottom - hitTop,
-        });
-      }
-    });
+    const rects = albumDropRects(layout.current.map(({ album }) => album.id), {
+      x: b.x, y: hitTop, width: b.width, height: hitBottom - hitTop,
+    }, 6);
     return hitAlbum(rects, point.x, point.y);
   }, []);
 
@@ -131,12 +124,12 @@ export const AlbumBar = forwardRef<AlbumBarHandle, Props>(function AlbumBar(prop
         <Text style={{ color: props.dropMode ? ACCENT : muted, fontSize: 11 }}>{props.dropMode ? '放開分類' : '編輯'}</Text>
       </Pressable>
       <View ref={row} collapsable={false} style={styles.albums} onLayout={measure}>
-        {slots.map((album, index) => <AlbumTarget key={index} album={album} index={index}
+        {slots.map(({ album, index }) => <AlbumTarget key={album.id} album={album} index={index}
           selected={album !== null && props.downTargetId === album.id}
           hover={album !== null && props.highlightId === album.id} dropMode={props.dropMode}
           onPress={() => {
             if (album) {
-              props.onSelectDownTarget?.(album.id);
+              props.onSelectDownTarget(album.id);
               props.onLongPress(album.id);
             } else {
               open('down');
