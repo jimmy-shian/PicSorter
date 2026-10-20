@@ -22,6 +22,8 @@ interface Props {
   onClassify: (id: string) => Promise<void>;
   /** 長按晶片：通知父層顯示完整相簿名稱（頂部通知），不觸發分類 */
   onLongPress: (id: string) => void;
+  /** 點選快捷晶片：切換下滑目標，不立即分類 */
+  onSelectDownTarget?: (id: string) => void;
   sourceId: string | null;
   onOrderChanged: () => void | Promise<void>;
   dropMode: boolean;
@@ -132,7 +134,14 @@ export const AlbumBar = forwardRef<AlbumBarHandle, Props>(function AlbumBar(prop
         {slots.map((album, index) => <AlbumTarget key={index} album={album} index={index}
           selected={album !== null && props.downTargetId === album.id}
           hover={album !== null && props.highlightId === album.id} dropMode={props.dropMode}
-          onPress={() => { if (album) void props.onClassify(album.id); else open('down'); }}
+          onPress={() => {
+            if (album) {
+              props.onSelectDownTarget?.(album.id);
+              props.onLongPress(album.id);
+            } else {
+              open('down');
+            }
+          }}
           onLongPress={props.onLongPress} />)}
       </View>
     </View>

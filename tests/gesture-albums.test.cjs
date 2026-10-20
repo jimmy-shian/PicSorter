@@ -21,7 +21,7 @@ function load(relative) {
   );
   return module.exports;
 }
-const { normalizeGestureDraft, toggleShortcut, parseShortcutIds, reorderAlbumGroup, albumDisplayGroups } = load('gesture-albums');
+const { normalizeGestureDraft, toggleShortcut, assignShortcutSlot, clearShortcut, parseShortcutIds, reorderAlbumGroup, albumDisplayGroups } = load('gesture-albums');
 const { loadGestureAlbumSettings, saveGestureAlbumSettings } = load('gesture-album-storage');
 const entry = (id, sortIndex = 0, extra = {}) => ({ id, title: id, sortIndex, pinned: false, hidden: false, ...extra });
 const entries = ['a', 'b', 'c', 'd', 'e'].map((id, index) => entry(id, index));
@@ -204,4 +204,19 @@ test('搜尋不分大小寫且忽略前後空白，排序只交換命中項目�
   assert.equal(next.find((e) => e.id === 'x').sortIndex, 2);
   assert.deepEqual(albumDisplayGroups(next.map((e) => ({ ...e, hidden: false }))).normal.map((e) => e.id), ['b', 'h', 'x', 'a']);
   assert.deepEqual(albumDisplayGroups(original, 'missing'), { pinned: [], normal: [], hidden: [] });
+});
+
+test('assignShortcutSlot 正確指派與互換快捷位置', () => {
+  const base = draft({ shortcutIds: ['a', 'b', 'c'] });
+  // 將 'c'（目前在第 3 位）與第 1 位的 'a' 互換
+  const swapped = assignShortcutSlot(base, 'c', 0);
+  assert.deepEqual(swapped.shortcutIds, ['c', 'b', 'a']);
+
+  // 將未在快捷中的 'd' 指派至第 2 位（替換 'b'）
+  const replaced = assignShortcutSlot(swapped, 'd', 1);
+  assert.deepEqual(replaced.shortcutIds, ['c', 'd', 'a']);
+
+  // 清除 'd' 的快捷
+  const cleared = clearShortcut(replaced, 'd');
+  assert.deepEqual(cleared.shortcutIds, ['c', 'a']);
 });
