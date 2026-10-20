@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/theme';
 import type { TargetAlbum } from '@/types';
@@ -23,6 +23,7 @@ export function TargetAlbumSheet({ visible, title, targets, onPick, onClose }: P
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
       <Pressable style={styles.backdrop} onPress={handleClose}>
+        <KeyboardAvoidingView behavior="padding" style={styles.avoid}>
         <Pressable
           style={[styles.sheet, { backgroundColor: bg, borderColor: border, paddingBottom: insets.bottom + 16 }]}
           onPress={() => {}}>
@@ -53,6 +54,7 @@ export function TargetAlbumSheet({ visible, title, targets, onPick, onClose }: P
             <Text style={{ color: muted }}>取消</Text>
           </Pressable>
         </Pressable>
+        </KeyboardAvoidingView>
       </Pressable>
     </Modal>
   );
@@ -60,6 +62,7 @@ export function TargetAlbumSheet({ visible, title, targets, onPick, onClose }: P
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
+  avoid: { flex: 1, justifyContent: 'flex-end' },
   sheet: {
     maxHeight: '88%',
     borderTopLeftRadius: 20,

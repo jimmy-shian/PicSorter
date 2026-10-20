@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  AccessibilityInfo, Alert, FlatList, KeyboardAvoidingView, Modal, Platform,
+  AccessibilityInfo, Alert, FlatList, KeyboardAvoidingView, Modal,
   Pressable, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -144,7 +144,7 @@ export function GestureAlbumSheet(props: Props) {
     <Modal visible={props.visible} transparent statusBarTranslucent animationType="slide" onRequestClose={requestClose}>
       <View style={styles.backdrop}>
         <Pressable style={StyleSheet.absoluteFill} onPress={requestClose} accessibilityRole="button" accessibilityLabel="關閉相簿設定" />
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={[styles.sheet, { backgroundColor: bg }, page === 'manage' && { height: '100%', maxHeight: '100%', borderTopLeftRadius: 0, borderTopRightRadius: 0 }]} accessibilityViewIsModal>
+        <KeyboardAvoidingView behavior="padding" style={[styles.sheet, { backgroundColor: bg }, page === 'manage' && { height: '100%', maxHeight: '100%', borderTopLeftRadius: 0, borderTopRightRadius: 0 }]} accessibilityViewIsModal>
           <View style={[styles.header, page === 'manage' && { paddingTop: insets.top + 8 }]}>
             {page === 'select' && <View style={[styles.handle, { backgroundColor: muted }]} />}
             <View style={styles.titleRow}>

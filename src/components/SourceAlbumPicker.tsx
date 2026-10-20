@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/theme';
 import { listSourceAlbums } from '@/lib/media';
@@ -56,6 +56,7 @@ export function SourceAlbumPicker({ visible, current, onSelect, onClose }: Props
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
       <Pressable style={styles.backdrop} onPress={handleClose}>
+        <KeyboardAvoidingView behavior="padding" style={styles.avoid}>
         <Pressable
           style={[styles.sheet, { backgroundColor: bg, borderColor: border, paddingBottom: insets.bottom + 16 }]}
           onPress={() => {}}>
@@ -110,6 +111,7 @@ export function SourceAlbumPicker({ visible, current, onSelect, onClose }: Props
             <Text style={{ color: muted }}>關閉</Text>
           </Pressable>
         </Pressable>
+        </KeyboardAvoidingView>
       </Pressable>
     </Modal>
   );
@@ -119,6 +121,10 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-end',
+  },
+  avoid: {
+    flex: 1,
     justifyContent: 'flex-end',
   },
   sheet: {
