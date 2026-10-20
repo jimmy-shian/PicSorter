@@ -11,6 +11,7 @@ import { saveGestureAlbumSettings } from '@/lib/gesture-album-storage';
 import { createTargetAlbum, listTargetAlbums } from '@/lib/media';
 import { normalizeGestureDraft, toggleShortcut, type GestureAlbumDraft } from '@/lib/gesture-albums';
 import { useTheme } from '@/lib/theme';
+import { AlbumSearch } from './AlbumSearch';
 import { AlbumManagerList } from './AlbumManagerList';
 
 interface Props {
@@ -40,6 +41,7 @@ export function GestureAlbumSheet(props: Props) {
   const [loadError, setLoadError] = useState('');
   const [notice, setNotice] = useState('');
   const [name, setName] = useState('');
+  const [keyword, setKeyword] = useState('');
   const [retry, setRetry] = useState(0);
   const list = useRef<FlatList>(null);
   const notify = (message: string) => { setNotice(message); AccessibilityInfo.announceForAccessibility(message); };
@@ -50,7 +52,7 @@ export function GestureAlbumSheet(props: Props) {
     void (async () => {
       await Promise.resolve();
       if (!active) return;
-      setLoading(true); setLoadError(''); setNotice(''); setDraft(null); setPage('select'); setName('');
+      setLoading(true); setLoadError(''); setNotice(''); setDraft(null); setPage('select'); setName(''); setKeyword('');
       setAnchor(propsRef.current.anchor);
       try {
         const live = await listTargetAlbums(props.sourceId);
@@ -134,8 +136,8 @@ export function GestureAlbumSheet(props: Props) {
   };
 
   const entries = draft?.entries ?? [];
-  const available = entries.filter((e) => !e.hidden).sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.sortIndex - b.sortIndex);
-  const duplicates = new Set(entries.filter((e, index) => entries.findIndex((other) => other.title === e.title) !== index).map((e) => e.title));
+  const query = keyword.trim().toLocaleLowerCase();
+  const available = entries.filter((e) => !e.hidden && e.title.toLocaleLowerCase().includes(query)).sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.sortIndex - b.sortIndex);
   const title = page === 'manage' ? '管理相簿' : page === 'create' ? '新增相簿' : '分類手勢';
   const subtitle = page === 'manage' ? '拖曳可調整順序，並管理固定與顯示狀態。' : page === 'create' ? '建立後可再選為手勢目標' : '';
   return (
@@ -163,6 +165,7 @@ export function GestureAlbumSheet(props: Props) {
                 {anchor === 'down' && <Text style={{ color: muted, fontSize: 12 }}>快捷 {draft?.shortcutIds.length ?? 0} / 4</Text>}
               </View>
             </>}
+            {page !== 'create' && !loading && !loadError && <AlbumSearch value={keyword} onChange={setKeyword} disabled={saving} />}
           </View>
 
           {loading ? <View style={styles.empty}><Text style={{ color: muted }}>載入相簿中…</Text></View> : loadError ? <View style={styles.empty}>
@@ -172,7 +175,7 @@ export function GestureAlbumSheet(props: Props) {
               accessibilityLabel="新相簿名稱" style={[styles.input, { color: text, borderColor: border }]} returnKeyType="done" onSubmitEditing={() => void create()} />
             <Text style={[styles.subtitle, { color: muted }]}>相簿會立即建立，放棄設定時仍會保留。</Text>
           </View> : page === 'manage' && draft ? <View style={styles.body}>
-            <AlbumManagerList entries={entries} shortcutIds={draft.shortcutIds}
+            <AlbumManagerList keyword={keyword} entries={entries} shortcutIds={draft.shortcutIds}
               onToggleShortcut={(id) => {
                 if (!draft.shortcutIds.includes(id) && draft.shortcutIds.length >= 4) notify('最多 4 個快捷，請先取消一個。');
                 else setDraft(toggleShortcut(draft, id));
@@ -183,20 +186,19 @@ export function GestureAlbumSheet(props: Props) {
               }} />
           </View> : <FlatList ref={list} key={anchor} data={available} keyExtractor={(entry) => entry.id} style={styles.body}
             contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled"
-            ListEmptyComponent={<Text style={{ color: muted, paddingVertical: 24 }}>沒有可用的相簿，可新增相簿或到管理頁恢復顯示。</Text>}
+            ListEmptyComponent={<Text style={{ color: muted, paddingVertical: 24 }}>{query ? `找不到符合「${keyword.trim()}」的相簿` : '沒有可用的相簿，可新增相簿或到管理頁恢復顯示。'}</Text>}
             renderItem={({ item }) => {
               const index = draft?.shortcutIds.indexOf(item.id) ?? -1;
               const selected = anchor === 'up' ? draft?.upId === item.id : draft?.downId === item.id;
               return <Pressable disabled={saving} accessibilityRole="radio" accessibilityState={{ checked: selected }}
-                accessibilityLabel={`${item.title}${duplicates.has(item.title) ? `，相簿識別碼 ${item.id}` : ''}${anchor === 'down' && index >= 0 ? `，快捷第 ${index + 1} 位` : ''}`}
+                accessibilityLabel={`${item.title}${anchor === 'down' && index >= 0 ? `，快捷第 ${index + 1} 位` : ''}`}
                 style={[styles.albumRow, { backgroundColor: selected ? '#168bff20' : card, borderColor: selected ? '#477aa6' : border, borderWidth: selected ? 1 : 0, borderBottomWidth: StyleSheet.hairlineWidth }]}
                 onPress={() => {
                   if (!draft) return;
                   if (anchor === 'up') setDraft({ ...draft, upId: item.id });
                   else setDraft({ ...draft, downId: item.id });
                 }}>
-                <View style={styles.albumName}><Text numberOfLines={1} style={{ color: text, fontSize: 15 }}>{item.title}</Text>
-                  <Text numberOfLines={1} style={{ color: muted, fontSize: 10, marginTop: 3 }}>相簿識別碼：{item.id}</Text></View>
+                <View style={styles.albumName}><Text numberOfLines={1} style={{ color: text, fontSize: 15 }}>{item.title}</Text></View>
                 <Text style={{ width: 24, color: text, fontSize: 20, textAlign: 'center' }}>{selected ? '✓' : ''}</Text>
                 {index >= 0 && <View style={[styles.shortcutBadge, { borderColor: '#168BFF' }]}><Text numberOfLines={1} maxFontSizeMultiplier={1.4} style={{ color: text, fontSize: 11 }}>快捷 {index + 1}</Text></View>}
                 <Pressable disabled={saving} accessibilityRole="checkbox" accessibilityState={{ checked: index >= 0 }}

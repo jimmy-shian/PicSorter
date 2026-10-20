@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/theme';
 import type { TargetAlbum } from '@/types';
+import { AlbumSearch } from './AlbumSearch';
 
 interface Props {
   visible: boolean;
@@ -15,33 +17,39 @@ interface Props {
 export function TargetAlbumSheet({ visible, title, targets, onPick, onClose }: Props) {
   const { bg, text, muted, border, card } = useTheme();
   const insets = useSafeAreaInsets();
+  const [keyword, setKeyword] = useState('');
+  const handleClose = () => { setKeyword(''); onClose(); };
+  const filtered = targets.filter((album) => album.title.toLocaleLowerCase().includes(keyword.trim().toLocaleLowerCase()));
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
+      <Pressable style={styles.backdrop} onPress={handleClose}>
         <Pressable
           style={[styles.sheet, { backgroundColor: bg, borderColor: border, paddingBottom: insets.bottom + 16 }]}
           onPress={() => {}}>
           <View style={styles.handle} />
           <Text style={[styles.title, { color: text }]}>{title}</Text>
+          <AlbumSearch value={keyword} onChange={setKeyword} />
           {targets.length === 0 ? (
             <Text style={[styles.empty, { color: muted }]}>沒有可用的目標相簿</Text>
           ) : (
             <FlatList
-              data={targets}
+              data={filtered}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={<Text style={[styles.empty, { color: muted }]}>找不到符合的相簿</Text>}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <Pressable
                   style={[styles.row, { backgroundColor: card }]}
                   onPress={() => {
                     onPick(item.id);
-                    onClose();
+                    handleClose();
                   }}>
                   <Text style={[styles.rowText, { color: text }]}>{item.title}</Text>
                 </Pressable>
               )}
             />
           )}
-          <Pressable style={[styles.closeBtn, { borderColor: border }]} onPress={onClose}>
+          <Pressable style={[styles.closeBtn, { borderColor: border }]} onPress={handleClose}>
             <Text style={{ color: muted }}>取消</Text>
           </Pressable>
         </Pressable>

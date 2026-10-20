@@ -24,10 +24,10 @@ const GESTURE_DIRS: { dir: GestureDirection; label: string; icon: string }[] = [
 ];
 
 const GESTURE_ACTIONS: { action: GestureAction; label: string; desc: string }[] = [
-  { action: 'album', label: '放入上滑目標相簿', desc: '放入「分類手勢」設定的上滑目標' },
-  { action: 'trash', label: '標記為待刪除', desc: '標記移入垃圾桶' },
+  { action: 'album', label: '上滑目標相簿', desc: '放入「分類手勢」設定的上滑目標' },
+  { action: 'trash', label: '標記待刪除', desc: '標記移入垃圾桶' },
   { action: 'skip', label: '略過此張', desc: '不作處理，前進下一張' },
-  { action: 'inspect', label: '放入下滑目標相簿', desc: '放入「分類手勢」設定的下滑目標' },
+  { action: 'inspect', label: '下滑目標相簿', desc: '放入「分類手勢」設定的下滑目標' },
   { action: 'none', label: '無動作 (關閉)', desc: '滑動不執行動作，彈回' },
 ];
 
@@ -197,7 +197,7 @@ export default function SettingsScreen() {
           })}
         </View>
         <Text style={[styles.gestureHint, { color: muted }]}>
-          選擇已佔用的動作時會自動與原方向互換
+          點選方向更換動作；⇄ 表示交換兩個方向的動作
         </Text>
 
         <Text style={[styles.label, { color: muted }]}>移動確認</Text>
@@ -315,40 +315,44 @@ export default function SettingsScreen() {
         <Pressable style={styles.pickerBackdrop} onPress={() => setPickingDir(null)}>
           <Pressable style={[styles.pickerCard, { backgroundColor: bg, borderColor: border }]} onPress={() => {}}>
             <Text style={[styles.pickerTitle, { color: text }]}>
-              {pickingDir ? GESTURE_DIRS.find((g) => g.dir === pickingDir)?.label : ''} — 選擇動作
+              {pickingDir ? GESTURE_DIRS.find((g) => g.dir === pickingDir)?.label : ''}：選擇動作
             </Text>
-            {GESTURE_ACTIONS.map((a) => {
-              const isActive = pickingDir ? session.gestureSettings[pickingDir] === a.action : false;
-              // 找出哪個方向已經佔用了此 action（排除 none 與自身）
-              const occupiedBy =
-                a.action !== 'none' && pickingDir
-                  ? (Object.entries(session.gestureSettings) as [GestureDirection, GestureAction][]).find(
-                      ([d, act]) => d !== pickingDir && act === a.action,
-                    )
+            <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ gap: 10 }}>
+              {GESTURE_ACTIONS.map((a) => {
+                const isActive = pickingDir ? session.gestureSettings[pickingDir] === a.action : false;
+                // 找出哪個方向已經佔用了此 action（排除 none 與自身）
+                const occupiedBy =
+                  a.action !== 'none' && pickingDir
+                    ? (Object.entries(session.gestureSettings) as [GestureDirection, GestureAction][]).find(
+                        ([d, act]) => d !== pickingDir && act === a.action,
+                      )
+                    : undefined;
+                const occupiedDirection = occupiedBy
+                  ? GESTURE_DIRS.find((g) => g.dir === occupiedBy[0])
                   : undefined;
-              const occupiedLabel = occupiedBy
-                ? GESTURE_DIRS.find((g) => g.dir === occupiedBy[0])?.label
-                : undefined;
 
-              return (
-                <Pressable
-                  key={a.action}
-                  onPress={() => void handlePickAction(a.action)}
-                  style={[
-                    styles.pickerRow,
-                    { borderColor: border, backgroundColor: isActive ? card : 'transparent' },
-                  ]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.rowText, { color: text }]}>{a.label}</Text>
-                    <Text style={[styles.pickerDesc, { color: muted }]}>
-                      {a.desc}
-                      {occupiedLabel ? `（將與「${occupiedLabel}」互換）` : ''}
-                    </Text>
-                  </View>
-                  {isActive ? <Text style={{ color: muted, fontSize: 16 }}>✓</Text> : null}
-                </Pressable>
-              );
-            })}
+                return (
+                  <Pressable
+                    key={a.action}
+                    onPress={() => void handlePickAction(a.action)}
+                    style={[
+                      styles.pickerRow,
+                      { borderColor: border, backgroundColor: isActive ? card : 'transparent' },
+                    ]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.rowText, { color: text }]}>{a.label}</Text>
+                      <Text style={[styles.pickerDesc, { color: muted }]}>
+                        {a.desc}
+                      </Text>
+                    </View>
+                    {occupiedDirection && <View accessibilityLabel={`選取後，${GESTURE_DIRS.find((g) => g.dir === pickingDir)?.label}改為${a.label}，${occupiedDirection.label}改為${pickingDir ? actionLabel(session.gestureSettings[pickingDir]) : ''}`} style={[styles.swapBadge, { borderColor: border }]}>
+                      <Text style={{ color: muted, fontSize: 15 }}>{GESTURE_DIRS.find((g) => g.dir === pickingDir)?.icon} ⇄ {occupiedDirection.icon}</Text>
+                    </View>}
+                    {isActive ? <Text style={{ color: muted, fontSize: 16 }}>✓</Text> : null}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -399,9 +403,10 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
   rowText: { fontSize: 15 },
   emptyText: { fontSize: 13, paddingVertical: 12 },
-  gestureRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  gestureRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
   gestureIcon: { fontSize: 16, width: 20, textAlign: 'center' },
-  gestureAction: { fontSize: 13, flexShrink: 0 },
+  gestureAction: { fontSize: 13, flexShrink: 1, textAlign: 'right', marginLeft: 12 },
+  swapBadge: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5 },
   gestureHint: { fontSize: 11, marginTop: 2, paddingHorizontal: 4 },
   switchDesc: { fontSize: 12, marginTop: 2, lineHeight: 17 },
   recordRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 10 },
@@ -470,6 +475,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   pickerCard: {
+    maxHeight: '85%',
     borderWidth: 1.5,
     borderRadius: 16,
     padding: 18,

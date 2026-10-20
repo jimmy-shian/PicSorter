@@ -1,5 +1,17 @@
 import type { AlbumEntry } from './album-order';
 
+/** 只篩選顯示資料，不改原始排序；隱藏相簿永遠獨立置底。 */
+export function albumDisplayGroups(entries: AlbumEntry[], keyword = '') {
+  const query = keyword.trim().toLocaleLowerCase();
+  const matches = entries.filter((entry) => entry.title.toLocaleLowerCase().includes(query))
+    .sort((a, b) => a.sortIndex - b.sortIndex);
+  return {
+    pinned: matches.filter((entry) => !entry.hidden && entry.pinned),
+    normal: matches.filter((entry) => !entry.hidden && !entry.pinned),
+    hidden: matches.filter((entry) => entry.hidden),
+  };
+}
+
 export interface GestureAlbumDraft {
   entries: AlbumEntry[];
   upId: string | null;

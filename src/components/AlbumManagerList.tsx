@@ -5,12 +5,13 @@ import {
 } from 'react-native';
 import type { AlbumEntry } from '@/lib/album-order';
 import { edgeScroll, reorderIndex } from '@/lib/drag-geometry';
-import { reorderAlbumGroup } from '@/lib/gesture-albums';
+import { albumDisplayGroups, reorderAlbumGroup } from '@/lib/gesture-albums';
 import { useTheme } from '@/lib/theme';
 import { EyeIcon, EyeOffIcon, PinIcon } from './GestureIcons';
 
 interface Props {
   entries: AlbumEntry[];
+  keyword: string;
   onChange: (entries: AlbumEntry[]) => void;
   onHidden: (entry: AlbumEntry) => void;
   shortcutIds: string[];
@@ -30,9 +31,9 @@ interface DragState {
   velocity: number;
 }
 
-function ManagerRow({ entry, y, height, active, disabled, duplicate, reduceMotion, onStart, onMove, onEnd, onStep, onPin, onHidden, shortcutIndex, onToggleShortcut }: {
+function ManagerRow({ entry, y, height, active, disabled, reduceMotion, onStart, onMove, onEnd, onStep, onPin, onHidden, shortcutIndex, onToggleShortcut }: {
   shortcutIndex: number; onToggleShortcut: () => void;
-  entry: AlbumEntry; y: number; height: number; active: boolean; disabled: boolean; duplicate: boolean; reduceMotion: boolean;
+  entry: AlbumEntry; y: number; height: number; active: boolean; disabled: boolean; reduceMotion: boolean;
   onStart: () => void; onMove: (dy: number, fingerY: number) => void; onEnd: (cancel: boolean) => void;
   onStep: (direction: number) => void; onPin: () => void; onHidden: () => void;
 }) {
@@ -61,7 +62,7 @@ function ManagerRow({ entry, y, height, active, disabled, duplicate, reduceMotio
       borderWidth: active ? 1 : 0, borderBottomWidth: StyleSheet.hairlineWidth, elevation: active ? 6 : 0 }]}>
       {/* 手指明確按在 ☷ 把手才啟動垂直拖曳，不影響清單其他區域的自然捲動 */}
       <View style={styles.icon} accessible accessibilityRole="adjustable"
-        onStartShouldSetResponder={() => !disabled}
+        onStartShouldSetResponder={() => !disabled && !entry.hidden}
         onResponderGrant={(event) => {
           touchStart.current = event.nativeEvent.pageY;
           started.current = false;
@@ -76,15 +77,15 @@ function ManagerRow({ entry, y, height, active, disabled, duplicate, reduceMotio
         onResponderTerminationRequest={() => !started.current}
         onResponderRelease={() => finish(false)}
         onResponderTerminate={() => finish(true)}
-        accessibilityLabel={`拖曳調整 ${entry.title} 順序${duplicate ? `，相簿識別碼 ${entry.id}` : ''}`}
-        accessibilityHint="長按拖曳，或使用上移與下移動作"
-        accessibilityActions={[{ name: 'increment', label: '下移' }, { name: 'decrement', label: '上移' }]}
+        accessibilityLabel={`拖曳調整 ${entry.title} 順序`}
+        accessibilityState={{ disabled: disabled || entry.hidden }}
+        accessibilityHint={entry.hidden ? '恢復顯示後可調整順序' : '長按拖曳，或使用上移與下移動作'}
+        accessibilityActions={entry.hidden ? [] : [{ name: 'increment', label: '下移' }, { name: 'decrement', label: '上移' }]}
         onAccessibilityAction={(event) => onStep(event.nativeEvent.actionName === 'increment' ? 1 : -1)}>
         <Text style={{ color: muted, fontSize: 24 }}>☷</Text>
       </View>
       <View style={styles.name}>
         <Text numberOfLines={1} style={{ color: entry.hidden ? muted : text, fontSize: 15, fontWeight: '500' }}>{entry.title}</Text>
-        {duplicate && <Text numberOfLines={1} style={{ color: muted, fontSize: 12 }}>相簿識別碼：{entry.id}</Text>}
         {entry.hidden && <Text style={{ color: muted, fontSize: 12 }}>隱藏</Text>}
       </View>
       <View style={styles.actions}>
@@ -96,11 +97,11 @@ function ManagerRow({ entry, y, height, active, disabled, duplicate, reduceMotio
           </View>
         </Pressable>
         <Pressable disabled={disabled} accessibilityRole="button" accessibilityState={{ selected: entry.pinned, disabled }}
-          accessibilityLabel={`${entry.pinned ? '取消固定' : '固定'} ${entry.title}${duplicate ? `，${entry.id}` : ''}`} style={styles.icon} onPress={onPin}>
+          accessibilityLabel={`${entry.pinned ? '取消固定' : '固定'} ${entry.title}`} style={styles.icon} onPress={onPin}>
           <PinIcon size={21} color={entry.pinned ? '#168BFF' : muted} pinned={entry.pinned} />
         </Pressable>
         <Pressable disabled={disabled} accessibilityRole="button" accessibilityState={{ disabled }}
-          accessibilityLabel={`${entry.hidden ? '顯示' : '隱藏'} ${entry.title}${duplicate ? `，${entry.id}` : ''}`} style={styles.icon} onPress={onHidden}>
+          accessibilityLabel={`${entry.hidden ? '顯示' : '隱藏'} ${entry.title}`} style={styles.icon} onPress={onHidden}>
           {entry.hidden ? <EyeOffIcon size={21} color={muted} /> : <EyeIcon size={21} color="#168BFF" />}
         </Pressable>
       </View>
@@ -108,7 +109,7 @@ function ManagerRow({ entry, y, height, active, disabled, duplicate, reduceMotio
   );
 }
 
-export function AlbumManagerList({ entries, onChange, onHidden, shortcutIds, onToggleShortcut }: Props) {
+export function AlbumManagerList({ entries, keyword, onChange, onHidden, shortcutIds, onToggleShortcut }: Props) {
   const { text, muted, border, card } = useTheme();
   const { fontScale } = useWindowDimensions();
   const height = Math.max(54, Math.ceil(48 * fontScale));
@@ -121,6 +122,10 @@ export function AlbumManagerList({ entries, onChange, onHidden, shortcutIds, onT
   const viewport = useRef({ y: 0, height: 0 });
   const dragRef = useRef<DragState | null>(null);
   const entriesRef = useRef(entries);
+  useLayoutEffect(() => {
+    offset.current = 0;
+    scroll.current?.scrollTo({ y: 0, animated: false });
+  }, [keyword]);
   useLayoutEffect(() => { entriesRef.current = entries; }, [entries]);
   const onChangeRef = useRef(onChange);
   useLayoutEffect(() => { onChangeRef.current = onChange; }, [onChange]);
@@ -130,7 +135,7 @@ export function AlbumManagerList({ entries, onChange, onHidden, shortcutIds, onT
     const listener = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
     return () => { alive = false; listener.remove(); };
   }, []);
-  const sortedGroup = (list: AlbumEntry[], pinned: boolean) => list.filter((e) => e.pinned === pinned).sort((a, b) => a.sortIndex - b.sortIndex);
+  const sortedGroup = (list: AlbumEntry[], pinned: boolean) => albumDisplayGroups(list, keyword)[pinned ? 'pinned' : 'normal'];
 
   const move = (dy: number, fingerY: number) => {
     const state = dragRef.current;
@@ -138,6 +143,7 @@ export function AlbumManagerList({ entries, onChange, onHidden, shortcutIds, onT
     state.dy = dy; state.fingerY = fingerY;
     const group = sortedGroup(entriesRef.current, state.pinned);
     const ids = group.map((e) => e.id);
+    if (!ids.includes(state.id)) return;
     const y = Math.max(0, Math.min((ids.length - 1) * height, state.startY + dy + offset.current - state.startScroll));
     const target = Math.max(0, Math.min(ids.length - 1, reorderIndex(y, height, ids.indexOf(state.id), ids.length)));
     const current = ids.indexOf(state.id);
@@ -177,16 +183,18 @@ export function AlbumManagerList({ entries, onChange, onHidden, shortcutIds, onT
   const animate = () => { if (!reduceMotion) LayoutAnimation.configureNext({ ...LayoutAnimation.Presets.easeInEaseOut, duration: 220 }); };
   const pinnedGroup = sortedGroup(entries, true);
   const normalGroup = sortedGroup(entries, false);
+  const hiddenGroup = albumDisplayGroups(entries, keyword).hidden;
   const pinnedStart = Math.ceil(60 * Math.max(1, fontScale));
   const normalHeader = pinnedStart + Math.max(pinnedGroup.length * height, 24) + Math.ceil(24 * Math.max(1, fontScale));
   const normalStart = normalHeader + Math.ceil(44 * Math.max(1, fontScale));
-  const duplicates = new Set(entries.filter((e, index) => entries.findIndex((other) => other.title === e.title) !== index).map((e) => e.title));
+  const hiddenHeader = normalStart + normalGroup.length * height + 24;
+  const hiddenStart = hiddenHeader + Math.ceil(44 * Math.max(1, fontScale));
   return (
     <View ref={viewportRef} style={styles.list} onLayout={() => viewportRef.current?.measure((_, __, ___, visibleHeight, ____, pageY) => { viewport.current = { y: pageY, height: visibleHeight }; })}>
-    <ScrollView ref={scroll} style={styles.list} contentContainerStyle={{ paddingBottom: 24 }} scrollEnabled={!drag}
+    <ScrollView ref={scroll} style={styles.list} contentContainerStyle={{ paddingBottom: 24 }} keyboardShouldPersistTaps="handled" scrollEnabled={!drag}
       onContentSizeChange={(_, h) => { contentHeight.current = h; }}
       onScroll={(event) => { if (!dragRef.current) offset.current = event.nativeEvent.contentOffset.y; }} scrollEventThrottle={16}>
-      <View style={{ height: normalStart + normalGroup.length * height + 8 }}>
+      <View style={{ height: hiddenGroup.length ? hiddenStart + hiddenGroup.length * height + 8 : normalStart + normalGroup.length * height + 8 }}>
         <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: pinnedStart + Math.max(pinnedGroup.length * height, 24), borderRadius: 15, backgroundColor: card }} />
         <View pointerEvents="none" style={{ position: 'absolute', top: normalHeader, left: 0, right: 0, height: normalStart - normalHeader + normalGroup.length * height, borderRadius: 15, backgroundColor: card }} />
         <View style={[styles.section, { borderBottomColor: border, borderBottomWidth: StyleSheet.hairlineWidth, position: 'absolute', top: 0, left: 0, right: 0, height: pinnedStart }]}>
@@ -199,16 +207,23 @@ export function AlbumManagerList({ entries, onChange, onHidden, shortcutIds, onT
         <View style={[styles.section, { borderBottomColor: border, borderBottomWidth: StyleSheet.hairlineWidth, position: 'absolute', top: normalHeader, left: 0, right: 0, height: normalStart - normalHeader }]}>
           <View style={styles.sectionTitle}><Text style={{ color: text, fontSize: 15, fontWeight: '600' }}>其他相簿</Text><Text style={[styles.count, { color: muted, backgroundColor: border }]}>{normalGroup.length}</Text></View>
         </View>
+        {hiddenGroup.length > 0 && <>
+          <View pointerEvents="none" style={{ position: 'absolute', top: hiddenHeader, left: 0, right: 0, height: hiddenStart - hiddenHeader + hiddenGroup.length * height, borderRadius: 15, backgroundColor: card }} />
+          <View style={[styles.section, { position: 'absolute', top: hiddenHeader, left: 0, right: 0, height: hiddenStart - hiddenHeader }]}>
+            <View style={styles.sectionTitle}><Text style={{ color: text, fontSize: 15, fontWeight: '600' }}>已隱藏</Text><Text style={[styles.count, { color: muted, backgroundColor: border }]}>{hiddenGroup.length}</Text></View>
+          </View>
+        </>}
         {drag && <View pointerEvents="none" style={{ position: 'absolute', top: (pinnedGroup.some((e) => e.id === drag.id) ? pinnedStart + pinnedGroup.findIndex((e) => e.id === drag.id) * height : normalStart + normalGroup.findIndex((e) => e.id === drag.id) * height), left: 0, right: 0, height, borderRadius: 14, borderWidth: 1, borderStyle: 'dashed', borderColor: border }} />}
-        {[...pinnedGroup, ...normalGroup].map((entry) => {
+        {[...pinnedGroup, ...normalGroup, ...hiddenGroup].map((entry) => {
           const pinned = entry.pinned;
-          const group = pinned ? pinnedGroup : normalGroup;
+          const group = entry.hidden ? hiddenGroup : pinned ? pinnedGroup : normalGroup;
           const index = group.findIndex((e) => e.id === entry.id);
-          const groupStart = pinned ? pinnedStart : normalStart;
+          const groupStart = entry.hidden ? hiddenStart : pinned ? pinnedStart : normalStart;
           return <ManagerRow key={entry.id} entry={entry} y={groupStart + (drag?.id === entry.id ? drag.y : index * height)}
               shortcutIndex={shortcutIds.indexOf(entry.id)} onToggleShortcut={() => onToggleShortcut(entry.id)}
-              height={height} active={drag?.id === entry.id} disabled={!!drag} duplicate={duplicates.has(entry.title)} reduceMotion={reduceMotion}
+              height={height} active={drag?.id === entry.id} disabled={!!drag} reduceMotion={reduceMotion}
               onStart={() => {
+                if (entry.hidden) return;
                 dragRef.current = { id: entry.id, pinned, original: entriesRef.current, startY: index * height, startScroll: offset.current, dy: 0, fingerY: 0, edge: 0, velocity: 0 };
                 setDrag({ id: entry.id, y: index * height });
                 AccessibilityInfo.announceForAccessibility(`開始移動 ${entry.title}`);
@@ -218,7 +233,7 @@ export function AlbumManagerList({ entries, onChange, onHidden, shortcutIds, onT
                 dragRef.current = null; setDrag(null);
               }}
               onStep={(direction) => {
-                if (drag) return;
+                if (drag || entry.hidden) return;
                 const ids = group.map((e) => e.id); const target = index + direction;
                 if (target < 0 || target >= ids.length) return;
                 [ids[index], ids[target]] = [ids[target], ids[index]];
@@ -229,7 +244,7 @@ export function AlbumManagerList({ entries, onChange, onHidden, shortcutIds, onT
               onHidden={() => onHidden(entry)} />;
         })}
       </View>
-      {entries.length === 0 && <Text style={{ color: text, paddingVertical: 24 }}>沒有可管理的相簿</Text>}
+      {pinnedGroup.length + normalGroup.length + hiddenGroup.length === 0 && <Text style={{ color: text, paddingVertical: 24 }}>{keyword.trim() ? '找不到符合的相簿' : '沒有可管理的相簿'}</Text>}
       <View style={{ borderBottomColor: border, borderBottomWidth: StyleSheet.hairlineWidth, marginTop: 8 }} />
     </ScrollView>
     </View>

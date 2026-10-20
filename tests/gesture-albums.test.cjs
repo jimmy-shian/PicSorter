@@ -21,7 +21,7 @@ function load(relative) {
   );
   return module.exports;
 }
-const { normalizeGestureDraft, toggleShortcut, parseShortcutIds, reorderAlbumGroup } = load('gesture-albums');
+const { normalizeGestureDraft, toggleShortcut, parseShortcutIds, reorderAlbumGroup, albumDisplayGroups } = load('gesture-albums');
 const { loadGestureAlbumSettings, saveGestureAlbumSettings } = load('gesture-album-storage');
 const entry = (id, sortIndex = 0, extra = {}) => ({ id, title: id, sortIndex, pinned: false, hidden: false, ...extra });
 const entries = ['a', 'b', 'c', 'd', 'e'].map((id, index) => entry(id, index));
@@ -180,4 +180,28 @@ test('拖曳可命中第 4 或任意相簿，離開目標不分類', () => {
   assert.equal(hitAlbum(rects, 740, 630), 'album-7');
   assert.equal(hitAlbum(rects, 340, 590), null);
   assert.equal(hitAlbum(rects, 295, 630), null);
+});
+
+
+test('隱藏的固定與一般相簿集中置底，恢復後回原群組與位置', () => {
+  const original = [entry('p', 0, { pinned: true }), entry('a', 1), entry('b', 2), entry('c', 3)];
+  const hidden = original.map((e) => ['p', 'b'].includes(e.id) ? { ...e, hidden: true } : e);
+  const groups = albumDisplayGroups(hidden);
+  assert.deepEqual(groups.pinned, []);
+  assert.deepEqual(groups.normal.map((e) => e.id), ['a', 'c']);
+  assert.deepEqual(groups.hidden.map((e) => e.id), ['p', 'b']);
+  const restored = hidden.map((e) => ({ ...e, hidden: false }));
+  assert.deepEqual(albumDisplayGroups(restored), albumDisplayGroups(original));
+});
+
+test('搜尋不分大小寫且忽略前後空白，排序只交換命中項目並保留隱藏原位', () => {
+  const original = [entry('a', 0, { title: 'Trip A' }), entry('h', 1, { title: 'Trip hidden', hidden: true }), entry('x', 2), entry('b', 3, { title: 'TRIP B' })];
+  const groups = albumDisplayGroups(original, '  trip  ');
+  assert.deepEqual(groups.normal.map((e) => e.id), ['a', 'b']);
+  assert.deepEqual(groups.hidden.map((e) => e.id), ['h']);
+  const next = reorderAlbumGroup(original, ['b', 'a']);
+  assert.equal(next.find((e) => e.id === 'h').sortIndex, 1);
+  assert.equal(next.find((e) => e.id === 'x').sortIndex, 2);
+  assert.deepEqual(albumDisplayGroups(next.map((e) => ({ ...e, hidden: false }))).normal.map((e) => e.id), ['b', 'h', 'x', 'a']);
+  assert.deepEqual(albumDisplayGroups(original, 'missing'), { pinned: [], normal: [], hidden: [] });
 });

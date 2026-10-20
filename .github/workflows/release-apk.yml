@@ -1,0 +1,113 @@
+name: CI and release APK
+
+on:
+  pull_request:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: node --test tests/*.test.cjs
+
+  release:
+    needs: check
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Validate release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v$VERSION"
+          if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "$TAG" ]]; then
+            echo '::error::Tag must match package.json version.'
+            exit 1
+          fi
+          if git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+            test "$(git rev-list -n 1 "$TAG")" = "$GITHUB_SHA" || { echo '::error::Version tag points to a different commit. Bump the version.'; exit 1; }
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "apk=PicSorter-$TAG.apk" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - name: Generate Android project
+        run: npx expo prebuild --platform android --no-install
+      - name: Build universal release APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --build-cache --no-daemon --console=plain -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86,x86_64
+      - name: Sign with existing v1.0.4 key and verify APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          CREDENTIALS_JSON_BASE64: ${{ secrets.CREDENTIALS_JSON_BASE64 }}
+          APK_NAME: ${{ steps.version.outputs.apk }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          mkdir -p release
+          node scripts/sign-apk.cjs "$BUILD_TOOLS/lib/apksigner.jar" android/app/build/outputs/apk/release/app-release.apk "release/$APK_NAME"
+          unzip -t "release/$APK_NAME" >/dev/null
+          cd release
+          sha256sum "$APK_NAME" > "$APK_NAME.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PicSorter-${{ steps.version.outputs.tag }}
+          path: release/*
+          if-no-files-found: error
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/* --clobber
+          else
+            gh release create "$TAG" release/* --target "$GITHUB_SHA" --title "PicSorter $TAG" --generate-notes
+          fi
+      - name: Remove temporary signing credentials
+        if: always()
+        run: rm -f .ci-signing/release.keystore
