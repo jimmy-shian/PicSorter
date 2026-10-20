@@ -249,8 +249,12 @@ export async function listTargetAlbums(
 }
 
 export async function createTargetAlbum(title: string): Promise<TargetAlbum> {
-  const album = await Album.create(title.trim(), []);
-  return { id: album.id, title: await album.getTitle() };
+  const cleanTitle = title.trim();
+  // Android 系統不支援無媒體內容的空相簿建立。
+  // 先以 virtual: 前綴建立虛擬目標相簿，在分類與手勢中皆可直接指派；
+  // 待使用者點擊「套用」真正移動照片時，再由 MediaStore 建立實體相簿資料夾。
+  const virtualId = `virtual:${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  return { id: virtualId, title: cleanTitle };
 }
 
 export interface PhotoPage {
@@ -346,10 +350,20 @@ export async function getItemById(assetId: string): Promise<ClassifyItem | null>
  * - 刪除 = Asset.delete(assets)：走系統垃圾桶/最近刪除，由 OS 要求使用者確認。
  * 兩者不可視為單一原子交易，呼叫端需逐筆記錄成功/失敗。
  */
-export async function applyAddToAlbum(albumId: string, assetIds: string[]): Promise<void> {
+export async function applyAddToAlbum(albumId: string, assetIds: string[], albumTitle?: string): Promise<string> {
+  if (albumId.startsWith('virtual:') && albumTitle) {
+    const firstAsset = new Asset(assetIds[0]);
+    const album = await Album.create(albumTitle.trim(), [firstAsset]);
+    if (assetIds.length > 1) {
+      const restAssets = assetIds.slice(1).map((id) => new Asset(id));
+      await album.add(restAssets);
+    }
+    return album.id;
+  }
   const album = new Album(albumId);
   const assets = assetIds.map((id) => new Asset(id));
   await album.add(assets);
+  return albumId;
 }
 
 export async function applyMoveToTrash(assetIds: string[]): Promise<void> {

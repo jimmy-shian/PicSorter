@@ -61,7 +61,10 @@ export async function getAlbumEntries(
   );
   const entries: AlbumEntry[] = [];
   for (const r of rows) {
-    const title = titleOf.get(r.album_id);
+    let title = titleOf.get(r.album_id);
+    if (title === undefined && r.album_id.startsWith('virtual:')) {
+      title = r.title;
+    }
     if (title === undefined) continue; // 系統已無此相簿：保留列，不顯示
     entries.push({
       id: r.album_id,

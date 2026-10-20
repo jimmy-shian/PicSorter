@@ -2,7 +2,7 @@ import type * as SQLite from 'expo-sqlite';
 import { Album } from 'expo-media-library';
 import { applyAddToAlbum } from '@/lib/media';
 import { moveAssetsToTrash, permanentlyDeleteAssets } from '@/lib/trash';
-import { finishSession } from '@/lib/db';
+import { finishSession, getPref, setPref } from '@/lib/db';
 
 /**
  * P6 套用管線（規格 §3.4）：把待執行紀錄真正寫入系統。
@@ -179,7 +179,8 @@ export async function runApplyPipeline(
   const byAlbum = new Map<string, PendingRow[]>();
   for (const r of albumRows) {
     const id = r.target_album_id as string;
-    if (liveAlbums.size > 0 && !liveAlbums.has(id)) {
+    const isVirtual = id.startsWith('virtual:');
+    if (!isVirtual && liveAlbums.size > 0 && !liveAlbums.has(id)) {
       await markFailed(db, sessionId, [r.asset_id], '目標相簿已不存在');
       done += 1;
       report(done, total, 'verify', r.target_album_title);
@@ -196,6 +197,7 @@ export async function runApplyPipeline(
   let albumConfirmAllowed = true;
   for (const [albumId, rows] of byAlbum) {
     const title = liveAlbums.get(albumId) ?? rows[0]?.target_album_title ?? albumId;
+    let activeAlbumId = albumId;
     if (opts.albumConfirmMode !== 'each' && !albumConfirmAllowed) continue;
     if (opts.requestAlbumConfirm && (opts.albumConfirmMode === 'each' || !albumConfirmAsked)) {
       const allowed = await opts.requestAlbumConfirm(
@@ -215,7 +217,16 @@ export async function runApplyPipeline(
       const ids = batch.map((r) => r.asset_id);
       report(done, total, 'album', title);
       try {
-        await applyAddToAlbum(albumId, ids);
+        const realId = await applyAddToAlbum(activeAlbumId, ids, title);
+        if (activeAlbumId.startsWith('virtual:') && realId && !realId.startsWith('virtual:')) {
+          await db.runAsync('UPDATE album_order SET album_id = ? WHERE album_id = ?', realId, activeAlbumId);
+          await db.runAsync('UPDATE decisions SET target_album_id = ? WHERE target_album_id = ?', realId, activeAlbumId);
+          const up = await getPref(db, 'up_target_id');
+          if (up === activeAlbumId) await setPref(db, 'up_target_id', realId);
+          const down = await getPref(db, 'down_target_id');
+          if (down === activeAlbumId) await setPref(db, 'down_target_id', realId);
+          activeAlbumId = realId;
+        }
         await markApplied(db, sessionId, ids);
         appliedAlbum += ids.length;
         done += ids.length;
@@ -225,7 +236,12 @@ export async function runApplyPipeline(
         for (const id of ids) {
           if (isCancelled()) break;
           try {
-            await applyAddToAlbum(albumId, [id]);
+            const realId = await applyAddToAlbum(activeAlbumId, [id], title);
+            if (activeAlbumId.startsWith('virtual:') && realId && !realId.startsWith('virtual:')) {
+              await db.runAsync('UPDATE album_order SET album_id = ? WHERE album_id = ?', realId, activeAlbumId);
+              await db.runAsync('UPDATE decisions SET target_album_id = ? WHERE target_album_id = ?', realId, activeAlbumId);
+              activeAlbumId = realId;
+            }
             await markApplied(db, sessionId, [id]);
             appliedAlbum += 1;
           } catch (itemErr) {

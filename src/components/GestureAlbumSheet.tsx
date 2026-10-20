@@ -119,7 +119,7 @@ export function GestureAlbumSheet(props: Props) {
       const liveIds = new Set(live.map((e) => e.id));
       const next = normalizeGestureDraft({
         ...draft,
-        entries: draft.entries.filter((e) => liveIds.has(e.id)),
+        entries: draft.entries.filter((e) => liveIds.has(e.id) || e.id.startsWith('virtual:')),
       });
       await saveGestureAlbumSettings(db, next);
       committed = true;
@@ -142,18 +142,27 @@ export function GestureAlbumSheet(props: Props) {
     try {
       const maxRow = await db.getFirstAsync<{ m: number | null }>('SELECT MAX(sort_index) AS m FROM album_order');
       const album = await createTargetAlbum(name.trim());
-      // 系統相簿立即建立，設定仍留在草稿；不自動選為上滑或下滑目標。
       const sortIndex = Math.max(maxRow?.m ?? -1, ...draft.entries.map((e) => e.sortIndex)) + 1;
+      const entry = { ...album, sortIndex, hidden: false, pinned: false };
+      // 虛擬相簿先持久化於 album_order 表，重開機仍可保留
+      await db.runAsync(
+        'INSERT INTO album_order (album_id, title, sort_index, hidden, pinned) VALUES (?, ?, ?, 0, 0)',
+        entry.id, entry.title, sortIndex,
+      );
       if (!draft.entries.some((e) => e.id === album.id)) {
-        const entry = { ...album, sortIndex, hidden: false, pinned: false };
         setDraft({ ...draft, entries: [...draft.entries, entry] });
-        // 建立相簿不算可放棄的設定異動，避免只新增相簿就出現多餘確認。
         const initial = JSON.parse(baseline.current) as GestureAlbumDraft;
         baseline.current = JSON.stringify({ ...initial, entries: [...initial.entries, entry] });
       }
-      setName(''); setPage('select'); notify('相簿已建立，點選即可設定為手勢目標。');
-    } catch { notify('建立失敗，請稍後再試。'); }
-    finally { saveLock.current = false; setSaving(false); }
+      setName('');
+      setPage('select');
+      notify(`已建立相簿「${album.title}」，點選即可設定為手勢目標。`);
+    } catch {
+      notify('建立失敗，請稍後再試。');
+    } finally {
+      saveLock.current = false;
+      setSaving(false);
+    }
   };
 
   const entries = draft?.entries ?? [];
@@ -171,7 +180,7 @@ export function GestureAlbumSheet(props: Props) {
     });
 
   const title = page === 'manage' ? '管理相簿' : page === 'create' ? '新增相簿' : '分類手勢';
-  const subtitle = page === 'manage' ? '拖曳可調整順序，點擊快捷標籤可更換位置。' : page === 'create' ? '建立後可再選為手勢目標' : '';
+  const subtitle = page === 'manage' ? '拖曳可調整順序，點擊快捷標籤可更換位置。' : page === 'create' ? '建立後可立即選為手勢目標' : '';
 
   return (
     <Modal visible={props.visible} transparent statusBarTranslucent animationType="slide" onRequestClose={requestClose}>
@@ -280,7 +289,7 @@ export function GestureAlbumSheet(props: Props) {
                 onSubmitEditing={() => void create()}
               />
               <Text style={[styles.subtitle, { color: muted, marginTop: 8 }]}>
-                相簿會立即建立，放棄設定時仍會保留。
+                相簿建立後可在手勢與快捷中直接使用；套用時將自動於手機建立資料夾。
               </Text>
             </View>
           ) : page === 'manage' && draft ? (
