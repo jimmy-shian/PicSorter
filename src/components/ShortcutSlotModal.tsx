@@ -106,10 +106,10 @@ export function ShortcutSlotModal({
                       numberOfLines={1}
                       style={{
                         color: isCurrent ? '#FFFFFF' : text,
-                        fontSize: 11,
-                        fontWeight: '600',
+                        fontSize: 12,
+                        fontWeight: '700',
                       }}>
-                      快捷 {i + 1}
+                      {i + 1}
                     </Text>
                   </View>
                   <Text
@@ -204,9 +204,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   slotBadge: {
-    borderRadius: 6,
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
     paddingHorizontal: 6,
-    paddingVertical: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 4,
   },
   slotTitle: {

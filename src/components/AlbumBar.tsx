@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme';
+import { ConfirmDialog } from './ConfirmDialog';
 import { GestureAlbumSheet } from './GestureAlbumSheet';
 import { albumDropRects, hitAlbum, type DropRect } from '@/lib/drag-geometry';
 import type { TargetAlbum } from '@/types';
@@ -75,6 +76,8 @@ export const AlbumBar = forwardRef<AlbumBarHandle, Props>(function AlbumBar(prop
   const { onHover } = props;
   const [sheetVisible, setSheetVisible] = useState(false);
   const [anchor, setAnchor] = useState<'up' | 'down'>('up');
+  const lastClickRef = useRef<{ id: string; time: number } | null>(null);
+  const [pendingSwitchTarget, setPendingSwitchTarget] = useState<TargetAlbum | null>(null);
   const row = useRef<View>(null);
   const bounds = useRef({ x: 0, y: 0, width: 0, height: 0 });
   const slots = props.shortcutIds.map((id, index) => ({
@@ -115,6 +118,30 @@ export const AlbumBar = forwardRef<AlbumBarHandle, Props>(function AlbumBar(prop
   }), [hitTarget, onHover, measure]);
   const open = (direction: 'up' | 'down') => { setAnchor(direction); setSheetVisible(true); };
   const up = props.targets.find((album) => album.id === props.selectedId)?.title ?? '未設定';
+  const currentDownTitle = props.targets.find((album) => album.id === props.downTargetId)?.title ?? '自訂相簿';
+  const isNonShortcutTarget = Boolean(props.downTargetId && !props.shortcutIds.includes(props.downTargetId));
+
+  const handleAlbumPress = useCallback((album: TargetAlbum) => {
+    if (isNonShortcutTarget) {
+      const now = Date.now();
+      const isConsecutive =
+        lastClickRef.current !== null &&
+        lastClickRef.current.id === album.id &&
+        now - lastClickRef.current.time < 700;
+
+      lastClickRef.current = { id: album.id, time: now };
+
+      if (isConsecutive) {
+        lastClickRef.current = null;
+        setPendingSwitchTarget(album);
+      } else {
+        props.onLongPress(album.id);
+      }
+    } else {
+      props.onSelectDownTarget(album.id);
+      props.onLongPress(album.id);
+    }
+  }, [isNonShortcutTarget, props]);
   return <>
     <View style={styles.wrap}>
       <Pressable disabled={props.dropMode} accessibilityRole="button" accessibilityLabel={`上滑目標：${up}，編輯分類手勢`}
@@ -129,8 +156,7 @@ export const AlbumBar = forwardRef<AlbumBarHandle, Props>(function AlbumBar(prop
           hover={album !== null && props.highlightId === album.id} dropMode={props.dropMode}
           onPress={() => {
             if (album) {
-              props.onSelectDownTarget(album.id);
-              props.onLongPress(album.id);
+              handleAlbumPress(album);
             } else {
               open('down');
             }
@@ -141,6 +167,21 @@ export const AlbumBar = forwardRef<AlbumBarHandle, Props>(function AlbumBar(prop
     {(sheetVisible || props.expanded) && <GestureAlbumSheet visible sourceId={props.sourceId} anchor={anchor} upId={props.selectedId}
       downId={props.downTargetId ?? null} shortcutIds={props.shortcutIds}
       onClose={() => { setSheetVisible(false); if (props.expanded) props.onToggleExpand(); }} onSaved={props.onOrderChanged} />}
+    {pendingSwitchTarget && (
+      <ConfirmDialog
+        visible={pendingSwitchTarget !== null}
+        title="切換下滑相簿？"
+        message={`目前下滑相簿為「${currentDownTitle}」，確定要切換為快捷相簿「${pendingSwitchTarget.title}」嗎？`}
+        confirmText="切換"
+        cancelText="取消"
+        onConfirm={() => {
+          props.onSelectDownTarget(pendingSwitchTarget.id);
+          props.onLongPress(pendingSwitchTarget.id);
+          setPendingSwitchTarget(null);
+        }}
+        onCancel={() => setPendingSwitchTarget(null)}
+      />
+    )}
   </>;
 });
 const styles = StyleSheet.create({

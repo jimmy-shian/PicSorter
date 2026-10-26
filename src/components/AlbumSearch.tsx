@@ -17,7 +17,7 @@ export function AlbumSearch({ value, onChange, disabled = false }: {
 }
 
 const styles = StyleSheet.create({
-  search: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, marginBottom: 10 },
-  input: { flex: 1, minWidth: 0, minHeight: 48, paddingHorizontal: 12, fontSize: 14 },
-  clear: { minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
+  search: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 10 },
+  input: { flex: 1, minWidth: 0, minHeight: 40, paddingHorizontal: 12, fontSize: 14 },
+  clear: { minWidth: 40, minHeight: 40, alignItems: 'center', justifyContent: 'center' },
 });

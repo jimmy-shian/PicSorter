@@ -168,7 +168,7 @@ function ManagerRow({
                 fontSize: 11,
                 fontWeight: shortcutIndex >= 0 ? '600' : '400',
               }}>
-              {shortcutIndex >= 0 ? `快捷 ${shortcutIndex + 1}` : '未設'}
+              {shortcutIndex >= 0 ? `${shortcutIndex + 1}` : '未設'}
             </Text>
           </View>
         </Pressable>
@@ -206,7 +206,7 @@ export function AlbumManagerList({
 }: Props) {
   const { text, muted, border, card } = useTheme();
   const { fontScale } = useWindowDimensions();
-  const height = Math.max(54, Math.ceil(48 * fontScale));
+  const height = Math.max(44, Math.ceil(40 * fontScale));
   const [drag, setDrag] = useState<{ id: string; y: number } | null>(null);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [modalEntry, setModalEntry] = useState<AlbumEntry | null>(null);
@@ -540,12 +540,12 @@ export function AlbumManagerList({
 const styles = StyleSheet.create({
   list: { flex: 1, minHeight: 0 },
   section: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
-  row: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', borderRadius: 14, paddingRight: 4 },
-  icon: { width: 40, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
-  name: { flex: 1, minWidth: 0, paddingRight: 4, gap: 2 },
+  row: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', borderRadius: 10, paddingRight: 4 },
+  icon: { width: 36, minHeight: 40, alignItems: 'center', justifyContent: 'center' },
+  name: { flex: 1, minWidth: 0, paddingRight: 4, gap: 1 },
   actions: { flexDirection: 'row', gap: 0, flexShrink: 0 },
   sectionTitle: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   count: { fontSize: 11, borderRadius: 9, paddingHorizontal: 7, paddingVertical: 1, overflow: 'hidden' },
-  shortcutTouch: { minWidth: 58, minHeight: 48, justifyContent: 'center', alignItems: 'center' },
-  shortcutBadge: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 7, paddingVertical: 5, maxWidth: 70 },
+  shortcutTouch: { minWidth: 40, minHeight: 40, justifyContent: 'center', alignItems: 'center' },
+  shortcutBadge: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 7, paddingVertical: 3, minWidth: 26, alignItems: 'center', justifyContent: 'center' },
 });

@@ -256,7 +256,7 @@ export function GestureAlbumSheet(props: Props) {
             )}
 
             {page !== 'create' && !loading && !loadError && (
-              <View style={{ marginTop: 4, marginBottom: 8 }}>
+              <View style={{ marginTop: 2, marginBottom: 6 }}>
                 <AlbumSearch value={keyword} onChange={setKeyword} disabled={saving} />
               </View>
             )}
@@ -348,7 +348,7 @@ export function GestureAlbumSheet(props: Props) {
                       {
                         backgroundColor: selected ? '#168bff1c' : card,
                         borderColor: selected ? ACCENT : border,
-                        borderWidth: selected ? 1.5 : 1,
+                        borderWidth: selected ? 1.5 : StyleSheet.hairlineWidth,
                       },
                     ]}
                     onPress={() => {
@@ -361,7 +361,7 @@ export function GestureAlbumSheet(props: Props) {
                         numberOfLines={1}
                         style={{
                           color: selected ? (anchor === 'up' ? ACCENT : text) : text,
-                          fontSize: 15,
+                          fontSize: 14.5,
                           fontWeight: selected ? '600' : '400',
                         }}>
                         {item.title}
@@ -369,9 +369,9 @@ export function GestureAlbumSheet(props: Props) {
                     </View>
                     <Text
                       style={{
-                        width: 28,
+                        width: 22,
                         color: selected ? ACCENT : 'transparent',
-                        fontSize: 20,
+                        fontSize: 16,
                         textAlign: 'center',
                         fontWeight: '700',
                       }}>
@@ -380,8 +380,8 @@ export function GestureAlbumSheet(props: Props) {
                     {/* 上滑不用快捷設定，僅下滑且已被設為快捷時顯示標籤 */}
                     {anchor === 'down' && index >= 0 && (
                       <View style={[styles.shortcutBadge, { borderColor: ACCENT }]}>
-                        <Text numberOfLines={1} maxFontSizeMultiplier={1.4} style={{ color: text, fontSize: 11, fontWeight: '500' }}>
-                          快捷 {index + 1}
+                        <Text numberOfLines={1} maxFontSizeMultiplier={1.4} style={{ color: text, fontSize: 11, fontWeight: '700' }}>
+                          {index + 1}
                         </Text>
                       </View>
                     )}
@@ -438,35 +438,44 @@ export function GestureAlbumSheet(props: Props) {
 const styles = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet: { height: '88%', maxHeight: '90%', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
-  header: { paddingHorizontal: 20, paddingTop: 10, flexShrink: 0 },
-  handle: { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
-  back: { width: 36, minHeight: 44, justifyContent: 'center' },
-  titleRow: { flexDirection: 'row', alignItems: 'center', minHeight: 44, marginBottom: 6 },
-  title: { fontSize: 22, fontWeight: '700', flexShrink: 1 },
-  headerActionBtn: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
-  subtitle: { fontSize: 12, lineHeight: 17, marginBottom: 8 },
-  segments: { flexDirection: 'row', padding: 3, borderRadius: 15, marginBottom: 10 },
-  segment: { flex: 1, minHeight: 44, paddingVertical: 8, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
+  header: { paddingHorizontal: 16, paddingTop: 8, flexShrink: 0 },
+  handle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 8 },
+  back: { width: 36, minHeight: 38, justifyContent: 'center' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', minHeight: 38, marginBottom: 4 },
+  title: { fontSize: 20, fontWeight: '700', flexShrink: 1 },
+  headerActionBtn: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: 8 },
+  subtitle: { fontSize: 12, lineHeight: 16, marginBottom: 6 },
+  segments: { flexDirection: 'row', padding: 2, borderRadius: 12, marginBottom: 6 },
+  segment: { flex: 1, minHeight: 36, paddingVertical: 6, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
   status: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   body: { flex: 1, minHeight: 0, marginHorizontal: 16 },
-  listContent: { paddingVertical: 8, gap: 8, paddingBottom: 20 },
+  listContent: { paddingVertical: 4, gap: 6, paddingBottom: 16 },
   albumRow: {
-    minHeight: 52,
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
     gap: 8,
   },
   albumName: { flex: 1, minWidth: 0 },
-  footer: { flexShrink: 0, borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 20, paddingTop: 12, gap: 12 },
+  footer: { flexShrink: 0, borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, paddingTop: 10, gap: 10 },
   footerActions: { flexDirection: 'row', alignItems: 'stretch', gap: 10 },
-  shortcutBadge: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#168bff18', maxWidth: 80 },
-  secondary: { flex: 1, minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 8, justifyContent: 'center', alignItems: 'center' },
-  primary: { minHeight: 48, paddingVertical: 12, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  shortcutBadge: {
+    borderWidth: 1,
+    borderRadius: 8,
+    minWidth: 24,
+    height: 22,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#168bff18',
+  },
+  secondary: { flex: 1, minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 8, justifyContent: 'center', alignItems: 'center' },
+  primary: { minHeight: 44, paddingVertical: 10, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   snackbar: { borderRadius: 12, padding: 12 },
   empty: { flex: 1, padding: 20, justifyContent: 'center', alignItems: 'center', gap: 16 },
   createBody: { flex: 1, paddingHorizontal: 20, paddingTop: 10 },
-  input: { borderWidth: 1, borderRadius: 14, minHeight: 52, padding: 14, fontSize: 17 },
+  input: { borderWidth: 1, borderRadius: 14, minHeight: 48, padding: 12, fontSize: 16 },
 });
