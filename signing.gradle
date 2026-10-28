@@ -1,0 +1,28 @@
+
+
+def signingProperties = new Properties()
+def signingFile = rootProject.file('../../keystores/signing.properties')
+if (signingFile.exists()) signingFile.withInputStream { signingProperties.load(it) }
+def signingValue = { name, names -> names.collect { System.getenv(it) }.find { it } ?: signingProperties.getProperty(name) }
+def releaseStore = signingValue('storeFile', ['KEYSTORE_FILE', 'ANDROID_KEYSTORE_PATH', 'REATER_KEYSTORE_FILE'])
+def releaseStorePassword = signingValue('storePassword', ['KEYSTORE_PASSWORD', 'ANDROID_KEYSTORE_PASSWORD', 'REATER_STORE_PASS'])
+def releaseAlias = signingValue('keyAlias', ['KEY_ALIAS', 'ANDROID_KEY_ALIAS', 'REATER_KEY_ALIAS'])
+def releaseKeyPassword = signingValue('keyPassword', ['KEY_PASSWORD', 'ANDROID_KEY_PASSWORD', 'REATER_KEY_PASS'])
+if (gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') } &&
+    (!releaseStore || !releaseStorePassword || !releaseAlias || !releaseKeyPassword)) {
+    throw new GradleException('Release signing requires environment variables or central keystores/signing.properties')
+}
+
+
+
+android {
+    signingConfigs {
+        release {
+            if (releaseStore) storeFile file(releaseStore)
+            storePassword releaseStorePassword
+            keyAlias releaseAlias
+            keyPassword releaseKeyPassword
+        }
+    }
+    buildTypes { release { signingConfig signingConfigs.release } }
+}

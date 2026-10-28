@@ -1,3 +1,4 @@
+import { MilestoneAdModal } from '@/components/MilestoneAdModal';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -52,6 +53,18 @@ export default function ClassifyScreen() {
   const [inspectVisible, setInspectVisible] = useState(false);
   const [inspectLoading, setInspectLoading] = useState(false);
   const [inspectAlbums, setInspectAlbums] = useState<string[]>([]);
+  const [sortedCount, setSortedCount] = useState(0);
+  const [milestoneVisible, setMilestoneVisible] = useState(false);
+
+  const incrementCount = useCallback(() => {
+    setSortedCount((prev) => {
+      const next = prev + 1;
+      if (next > 0 && next % 50 === 0) {
+        setMilestoneVisible(true);
+      }
+      return next;
+    });
+  }, []);
   const session = useSession();
 
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -137,22 +150,24 @@ export default function ClassifyScreen() {
       });
     });
     return () => subscription.remove();
-  }, [session, showNotice]);
+  }, [session, showNotice, incrementCount]);
 
   const handleSwipeUp = useCallback(async () => {
     const ok = await session.classifyCurrent('album');
+    if (ok) incrementCount();
     if (!ok) showNotice('分類失敗，請重試');
-  }, [session, showNotice]);
+  }, [session, showNotice, incrementCount]);
 
   const handleTrash = useCallback(async () => {
     const ok = await session.classifyCurrent('trash');
+    if (ok) incrementCount();
     if (!ok) showNotice('標記失敗，請重試');
-  }, [session, showNotice]);
+  }, [session, showNotice, incrementCount]);
 
   const handleSkip = useCallback(async () => {
     const ok = await session.skipCurrent();
     if (!ok) showNotice('沒有更多照片了');
-  }, [session, showNotice]);
+  }, [session, showNotice, incrementCount]);
 
   const handleSwipeDown = useCallback(async () => {
     if (!session.downTargetId) {
@@ -161,9 +176,10 @@ export default function ClassifyScreen() {
     }
     const title = session.targets.find((t) => t.id === session.downTargetId)?.title ?? '';
     const ok = await session.classifyCurrent('album', session.downTargetId);
+    if (ok) incrementCount();
     if (ok) showNotice(`已放入「${title}」`);
     else showNotice('分類失敗，請重試');
-  }, [session, showNotice]);
+  }, [session, showNotice, incrementCount]);
 
   const currentItem = session.current;
   const handleInspect = useCallback(async () => {
@@ -456,6 +472,12 @@ export default function ClassifyScreen() {
       <SpotlightTutorial
         visible={session.tutorialVisible}
         onClose={() => session.setTutorialVisible(false)}
+      />
+
+      <MilestoneAdModal
+        visible={milestoneVisible}
+        sortedCount={sortedCount}
+        onClose={() => setMilestoneVisible(false)}
       />
     </SafeAreaView>
   );

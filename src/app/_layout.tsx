@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { SplashAdModal } from '@/components/SplashAdModal';
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -12,6 +14,7 @@ import { SessionProvider } from '@/lib/session-context';
 import { ThemeProvider, useTheme } from '@/lib/theme';
 
 function ThemedStack() {
+  const [showSplash, setShowSplash] = useState(true);
   const { dark, bg, text } = useTheme();
 
   // 深淺色跟著 App 主題走：狀態列圖示 + 底部導覽列按鈕 + 根視圖底色同步，
@@ -45,6 +48,7 @@ function ThemedStack() {
         <Stack.Screen name="apply" options={{ presentation: 'card', headerShown: true, title: '套用變更' }} />
         <Stack.Screen name="settings" options={{ presentation: 'card', headerShown: true, title: '設定' }} />
       </Stack>
+      <SplashAdModal visible={showSplash} onClose={() => setShowSplash(false)} />
     </>
   );
 }

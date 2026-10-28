@@ -62,3 +62,14 @@ logs/
 
 # local native module build outputs (./gradlew assembleRelease 產物，不進版本控制)
 modules/pic-sorter-trash/android/build/
+
+# Private signing, temporary tooling and incomplete ad configuration
+*.jks
+*.keystore
+**/keystore.properties
+**/signing.properties
+/keystores/key.txt
+/keystores/*base64*.txt
+/AD_UNITS_CONFIG.xlsx
+/ad_config.json
+/admob-config.json

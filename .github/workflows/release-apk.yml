@@ -72,6 +72,25 @@ jobs:
           cache-read-only: false
       - name: Generate Android project
         run: npx expo prebuild --platform android --no-install
+      - name: Load release signing references
+        env:
+          SIGNING_KEY_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${SIGNING_KEY_BASE64:?Missing KEYSTORE_BASE64}"
+          : "${SIGNING_STORE_PASSWORD:?Missing KEYSTORE_PASSWORD}"
+          : "${SIGNING_KEY_ALIAS:?Missing KEY_ALIAS}"
+          : "${SIGNING_KEY_PASSWORD:?Missing KEY_PASSWORD}"
+          umask 077
+          printf '%s' "$SIGNING_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/release-key.jks"
+          echo "KEYSTORE_FILE=$RUNNER_TEMP/release-key.jks" >> "$GITHUB_ENV"
+          echo "KEYSTORE_PASSWORD=$SIGNING_STORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "KEY_ALIAS=$SIGNING_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "KEY_PASSWORD=$SIGNING_KEY_PASSWORD" >> "$GITHUB_ENV"
       - name: Build universal release APK
         working-directory: android
         run: |

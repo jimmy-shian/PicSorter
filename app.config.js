@@ -5,6 +5,13 @@
  * - 設定頁顯示的版號讀原生 Application 常數（expo-application），不手寫
  */
 const { version } = require('./package.json');
+const adConfig = (() => {
+  try {
+    return require('./admob-config.json');
+  } catch {
+    return { appId: '', units: {} };
+  }
+})();
 
 function toVersionCode(v) {
   const parts = String(v).split('.').map((n) => parseInt(n, 10) || 0);
@@ -48,6 +55,14 @@ module.exports = {
       favicon: './assets/favicon.png',
     },
     plugins: [
+      './plugins/with-release-signing',
+      [
+        'react-native-google-mobile-ads',
+        {
+          androidAppId: adConfig.appId || 'ca-app-pub-3940256099942544~3347511713',
+          iosAppId: 'ca-app-pub-3940256099942544~1458002511',
+        },
+      ],
       'expo-router',
       'expo-status-bar',
       'expo-sqlite',
