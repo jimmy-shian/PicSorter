@@ -150,7 +150,7 @@ export default function ClassifyScreen() {
       });
     });
     return () => subscription.remove();
-  }, [session, showNotice, incrementCount]);
+  }, [session, showNotice]);
 
   const handleSwipeUp = useCallback(async () => {
     const ok = await session.classifyCurrent('album');
@@ -167,7 +167,7 @@ export default function ClassifyScreen() {
   const handleSkip = useCallback(async () => {
     const ok = await session.skipCurrent();
     if (!ok) showNotice('沒有更多照片了');
-  }, [session, showNotice, incrementCount]);
+  }, [session, showNotice]);
 
   const handleSwipeDown = useCallback(async () => {
     if (!session.downTargetId) {

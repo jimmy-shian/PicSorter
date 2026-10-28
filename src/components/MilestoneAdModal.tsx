@@ -9,7 +9,11 @@ interface MilestoneAdModalProps {
   onClose: () => void;
 }
 
-export function MilestoneAdModal({ visible, sortedCount, onClose }: MilestoneAdModalProps) {
+export function MilestoneAdModal(props: MilestoneAdModalProps) {
+  return props.visible ? <MilestoneAdContent key={props.sortedCount} {...props} /> : null;
+}
+
+function MilestoneAdContent({ visible, sortedCount, onClose }: MilestoneAdModalProps) {
   const { bypassed, ready, enableBypass } = useAdBypass();
   const [countdown, setCountdown] = useState(3);
   const clickTimestampsRef = useRef<number[]>([]);
@@ -32,7 +36,6 @@ export function MilestoneAdModal({ visible, sortedCount, onClose }: MilestoneAdM
       if (bypassed && visible) onClose();
       return;
     }
-    setCountdown(3);
     const timer = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
