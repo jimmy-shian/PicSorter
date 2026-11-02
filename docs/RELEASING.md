@@ -1,6 +1,6 @@
 # APK 建置與發布
 
-GitHub Actions 直接在 runner 上用 Android SDK 與 Gradle 編譯 APK，再發布到 GitHub Releases。專案既有的 Expo CLI 只負責在 runner 本機產生 Android 專案。
+GitHub Actions 直接在 runner 上用 Android SDK 與 Gradle 編譯 APK，再發布到 GitHub Releases。Gradle 使用中央簽章金鑰簽署 APK，Expo CLI 只負責產生原生專案。
 
 ## 發布流程
 
@@ -15,42 +15,29 @@ GitHub Actions 直接在 runner 上用 Android SDK 與 Gradle 編譯 APK，再�
 1. `npm ci` 安裝 lockfile 指定的依賴，執行 lint、typecheck 與測試。專案 `.npmrc` 使用 `legacy-peer-deps`，避免 npm 另外解析新版本 peer dependencies，導致既有 lockfile 無法安裝。
 2. `npx expo prebuild --platform android --no-install` 根據 `app.config.js` 產生原生專案，不登入任何帳號。
 3. `./gradlew :app:assembleRelease` 編譯包含 armeabi-v7a、arm64-v8a、x86、x86_64 的 universal APK。
-4. 從 GitHub Secrets 還原既有金鑰，用 Android SDK 的 apksigner 簽署並驗證 APK。
+4. 從 GitHub Secrets 還原中央簽章金鑰，交給 Gradle 簽署 APK，再用 Android SDK 的 apksigner 驗證。
 5. 檢查 APK 完整性、產生 SHA-256 校驗碼，保存 Actions artifact 並上傳 GitHub Release。
 
 Tag 必須等於 `v` 加上 package.json 的版本號。同名 tag 若已指向其他 commit，流程會停止，需提升版本。重跑同一 tag 會更新該 Release 的同名 APK 與校驗碼。
 
 ## 簽章設定
 
-已沿用本機 `android/app/debug.keystore`，並比對它與 `PicSorter-v1.0.4-arm64.apk` 的憑證 SHA-256 一致：
+PicSorter 使用中央 `release-key.jks`。目前簽章憑證的 SHA-256 為：
 
 ```text
-fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c
+b90cb6eee6caba3f431e1dd967a9170c19e6c572b5b57c745e357e358e180d5a
 ```
 
-GitHub repository → Settings → Secrets and variables → Actions 使用兩個 Secrets：
+GitHub repository → Settings → Secrets and variables → Actions 使用以下 Secrets：
 
 | 名稱 | 內容 |
 | --- | --- |
-| `ANDROID_KEYSTORE_BASE64` | 既有 keystore 的 Base64 |
-| `CREDENTIALS_JSON_BASE64` | 下方簽章設定 JSON 的 Base64 |
+| `KEYSTORE_BASE64` | 中央 keystore 的 Base64 |
+| `KEYSTORE_PASSWORD` | Keystore 密碼 |
+| `KEY_ALIAS` | 簽章 alias |
+| `KEY_PASSWORD` | 簽章 key 密碼 |
 
-簽章設定 JSON 格式：
-
-```json
-{
-  "android": {
-    "keystore": {
-      "keystorePath": ".ci-signing/release.keystore",
-      "keystorePassword": "android",
-      "keyAlias": "androiddebugkey",
-      "keyPassword": "android"
-    }
-  }
-}
-```
-
-CI 固定將金鑰還原到被 Git 忽略的 `.ci-signing/release.keystore`，不使用 JSON 中的路徑寫入任意位置。密碼由環境變數傳給 apksigner，工作完成後清除金鑰檔案。發布前會驗證簽章必須與 v1.0.4 相同，確保可以更新安裝。
+Workflow 將金鑰解碼至 runner 暫存目錄，透過環境變數提供給 Gradle。建置完成後會刪除暫存金鑰，並確認 APK 憑證符合上述 SHA-256。
 
 透過 GitHub API 設定 Secrets 的 token 需要 repository 的 `Secrets: Read and write`。執行 workflow 使用自動提供的 `GITHUB_TOKEN`，發布工作已設定 `contents: write`，不需要把個人 GitHub token 放到 CI。
 
@@ -76,7 +63,7 @@ git push origin v1.0.5
 
 原本 `v1.0.4` 指向圖示更新 commit，該 commit 沒有 workflow，因此推送 tag 時沒有自動建置。新增 workflow 不會追溯觸發舊 tag。
 
-此次操作修正使用 `1.0.5`，保留 v1.0.4 與既有歷史。包含 workflow 的 master 可以手動觸發發布，不需要移動舊 tag 或 force push。
+目前版本為 `1.0.6`。包含 workflow 的 master 可以手動觸發發布，不需要移動舊 tag 或 force push。
 
 ## 產物與排錯
 

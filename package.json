@@ -1,6 +1,6 @@
 {
   "name": "picsorter",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "main": "expo-router/entry",
   "dependencies": {
     "buffer": "^6.0.3",

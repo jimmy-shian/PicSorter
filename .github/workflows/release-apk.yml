@@ -136,4 +136,4 @@ jobs:
           fi
       - name: Remove temporary signing credentials
         if: always()
-        run: rm -f .ci-signing/release.keystore
+        run: rm -f "$RUNNER_TEMP/release-key.jks"
