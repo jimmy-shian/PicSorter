@@ -19,7 +19,7 @@ import { ArrowCircle } from '@/components/GestureIcons';
 import { openSystemPhotoViewer } from '@/lib/system-viewer';
 
 /** 渲染階段狀態，用於多層自癒備援 */
-type RenderStage = 'expo-primary' | 'expo-fallback' | 'native-primary' | 'native-fallback';
+type RenderStage = 'expo-primary' | 'expo-fallback' | 'native-primary' | 'native-fallback' | 'exhausted';
 
 /** 觸發門檻（px） */
 const UP_THRESHOLD = -85;
@@ -91,30 +91,48 @@ export function ClassifyPhoto({
     return item.uri;
   }, [item, stage]);
 
+  const itemId = item?.assetId;
+  const fallbackUri = item?.fallbackUri;
+  const primaryUri = item?.uri;
+
   /**
    * 載入失敗多層自癒機制：
    * 1. expo-primary 失敗 -> 嘗試 expo-fallback（例如切換 content:// 或 file://）。
    * 2. expo-fallback 失敗（或無 fallbackUri）-> 切換到 native-primary（React Native 原生 Fresco 解碼引擎）。
-   * 3. native-primary 失敗 -> 切換到 native-fallback。
+   * 3. native-primary 失敗 -> 切換到 native-fallback 或顯示失敗狀態。
+   * 4. native-fallback 失敗 -> 顯示失敗狀態，等待使用者點按重試。
    */
-  const handleLoadError = useCallback(() => {
-    const id = item?.assetId ?? '';
+  const handleLoadError = useCallback((failedStage: RenderStage) => {
+    const id = itemId ?? '';
     if (!id) return;
     setStageState((prev) => {
       const currentStage = prev.id === id ? prev.stage : 'expo-primary';
-      let nextStage: RenderStage = 'expo-primary';
-      if (currentStage === 'expo-primary') {
-        nextStage = item?.fallbackUri ? 'expo-fallback' : 'native-primary';
-      } else if (currentStage === 'expo-fallback') {
-        nextStage = 'native-primary';
-      } else if (currentStage === 'native-primary') {
-        nextStage = item?.fallbackUri ? 'native-fallback' : 'native-primary';
-      } else {
-        nextStage = 'native-fallback';
+      // 舊 URI 的延遲錯誤事件不可覆蓋目前階段。
+      if (currentStage !== failedStage) return prev;
+
+      const hasFallback = Boolean(fallbackUri && fallbackUri !== primaryUri);
+      let nextStage: RenderStage;
+      switch (currentStage) {
+        case 'expo-primary':
+          nextStage = hasFallback ? 'expo-fallback' : 'native-primary';
+          break;
+        case 'expo-fallback':
+          nextStage = 'native-primary';
+          break;
+        case 'native-primary':
+          nextStage = hasFallback ? 'native-fallback' : 'exhausted';
+          break;
+        default:
+          nextStage = 'exhausted';
       }
       return { id, stage: nextStage };
     });
-  }, [item?.assetId, item?.fallbackUri]);
+  }, [itemId, fallbackUri, primaryUri]);
+
+  const retryLoad = useCallback(() => {
+    if (!itemId) return;
+    setStageState({ id: itemId, stage: 'expo-primary' });
+  }, [itemId]);
 
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
@@ -128,9 +146,13 @@ export function ClassifyPhoto({
   const openSystemViewer = useMemo(() => {
     return async () => {
       if (!item) return;
+      if (stage === 'exhausted') {
+        retryLoad();
+        return;
+      }
       await openSystemPhotoViewer(item.assetId, activeUri || item.uri, item.mediaType);
     };
-  }, [item, activeUri]);
+  }, [item, activeUri, retryLoad, stage]);
 
   const handleRight = useMemo(() => {
     if (onSwipeRight) return onSwipeRight;
@@ -342,13 +364,17 @@ export function ClassifyPhoto({
     <Animated.View style={[styles.card, { width: w, height: h }, cardStyle]}>
       {item.mediaType === 'video' ? (
         <VideoPreview uri={activeUri} width={w} height={h} controls={false} />
+      ) : stage === 'exhausted' ? (
+        <View style={[styles.loadFailed, { width: w, height: h, backgroundColor: bg }]}>
+          <Text style={{ color: muted, textAlign: 'center' }}>照片載入失敗，點按重試</Text>
+        </View>
       ) : isNativeFallback ? (
         <RNImage
           key={`native-${item.assetId}:${activeUri}:${stage}`}
           source={{ uri: activeUri }}
           style={{ width: w, height: h, borderRadius: 12 }}
           resizeMode="contain"
-          onError={handleLoadError}
+          onError={() => handleLoadError(stage)}
         />
       ) : (
         <Image
@@ -364,7 +390,7 @@ export function ClassifyPhoto({
           transition={0}
           recyclingKey={`${item.assetId}:${activeUri}:${stage}`}
           cachePolicy="memory-disk"
-          onError={handleLoadError}
+          onError={() => handleLoadError(stage)}
         />
       )}
       {item.mediaType === 'video' ? (
@@ -467,6 +493,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 280 },
+  loadFailed: { alignItems: 'center', justifyContent: 'center', borderRadius: 12, padding: 24 },
   unifiedTopHint: {
     borderColor: '#fafaf9',
     maxWidth: '94%',

@@ -8,6 +8,7 @@ import {
   requestPermissionsAsync,
   type PermissionResponse,
 } from 'expo-media-library';
+import { getAssetsAsync as getLegacyAssetsAsync, MediaType as LegacyMediaType } from 'expo-media-library/legacy';
 import type { ClassifyItem, SortOrder, SourceAlbum, TargetAlbum } from '@/types';
 
 /**
@@ -37,10 +38,8 @@ export function toContentUri(assetId: string, mediaType?: 'image' | 'video' | st
 }
 
 /**
- * 取得雙層可用 URI：
- * 1. fileUri: 本機直接檔案路徑（如 file:///storage/emulated/0/...），在 Android 上讀取效能最好、無 IPC 開銷。
- * 2. contentUri: MediaStore 官方 URI（content://media/external/images/media/...），Scoped Storage 官方標準。
- * 優先使用乾淨的 fileUri；若無 fileUri（如某些編輯過的照片系統未暴露 DATA 路徑）或失敗時，使用 contentUri。
+ * 使用媒體資產本身的 URI 作為主要來源，檔案路徑作為載入備援。
+ * Android 的 Asset.id 是可重新建立 Asset 的 contentUri；避免把可能變動的實體路徑存成主要 URI。
  */
 export function resolveUris(
   assetId: string,
@@ -50,18 +49,25 @@ export function resolveUris(
   const contentUri = toContentUri(assetId, mediaType);
   const cleanStored = sanitizeFileUri(storedUri);
 
-  // 若有有效的 file:// 路徑，優先以直接檔案讀取（Glide 本機讀取最穩定），content:// 作為 fallback
-  if (cleanStored && cleanStored.startsWith('file://')) {
+  // SDK 57 的 Android Asset.id 已是 content:// URI；iOS 使用 Photos 資產 URI。
+  // 兩者都以資產識別 URI 為主，getUri() 回傳的位置 URI 留作備援。
+  if (contentUri.startsWith('content://') || contentUri.startsWith('ph://')) {
+    return {
+      uri: contentUri,
+      fallbackUri: cleanStored && cleanStored !== contentUri ? cleanStored : undefined,
+    };
+  }
+
+  // 舊版或非標準 assetId 無法提供資產 URI 時，沿用系統回傳的 URI。
+  if (cleanStored) {
     return {
       uri: cleanStored,
       fallbackUri: contentUri && contentUri !== cleanStored ? contentUri : undefined,
     };
   }
 
-  // 若無實體檔案路徑（例如部分編輯後的照片或純雲端串流），以 contentUri 為主
   return {
-    uri: contentUri || cleanStored,
-    fallbackUri: cleanStored && cleanStored !== contentUri ? cleanStored : undefined,
+    uri: contentUri,
   };
 }
 
@@ -260,9 +266,21 @@ export async function createTargetAlbum(title: string): Promise<TargetAlbum> {
 export interface PhotoPage {
   items: ClassifyItem[];
   hasMore: boolean;
+  /** 原始查得的素材數（含因無法解析 URI 而略過者）；offset 累加需用此值，否則會重疊產生重複照片 */
+  fetched: number;
 }
 
 const PAGE_SIZE = 30;
+
+/** 取得目前來源相簿的照片與影片估算總數，只讀取一筆資產以取得系統回報的計數。 */
+export async function getPhotoCount(source: SourceAlbum): Promise<number> {
+  const result = await getLegacyAssetsAsync({
+    first: 1,
+    mediaType: [LegacyMediaType.photo, LegacyMediaType.video],
+    ...(source.id === null ? {} : { album: source.id }),
+  });
+  return result.totalCount;
+}
 
 /**
  * 分頁讀取相片與影片。SDK 57 新 API 以 Query + orderBy 取代舊 getAssetsAsync。
@@ -285,7 +303,8 @@ export async function getPhotoPage(
   }
   const assets: Asset[] = await query.exe();
   const items: ClassifyItem[] = [];
-  for (const asset of assets) {
+  for (let sourceIndex = 0; sourceIndex < assets.length; sourceIndex += 1) {
+    const asset = assets[sourceIndex];
     const [storedUri, width, height, creationTime, mediaType, duration] = await Promise.all([
       asset.getUri().catch(() => ''),
       asset.getWidth().catch(() => 0),
@@ -301,6 +320,7 @@ export async function getPhotoPage(
       assetId: asset.id,
       uri,
       fallbackUri,
+      sourceIndex,
       width,
       height,
       creationTime,
@@ -308,7 +328,7 @@ export async function getPhotoPage(
       duration: duration ?? 0,
     });
   }
-  return { items, hasMore: assets.length >= limit };
+  return { items, hasMore: assets.length >= limit, fetched: assets.length };
 }
 
 /**

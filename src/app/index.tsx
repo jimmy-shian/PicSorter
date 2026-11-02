@@ -1,9 +1,10 @@
 import { MilestoneAdModal } from '@/components/MilestoneAdModal';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { AppState, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Link, router } from 'expo-router';
-import { usePermissions } from 'expo-media-library';
+import * as Linking from 'expo-linking';
+import { presentPermissionsPicker, usePermissions } from 'expo-media-library';
 import { useSession } from '@/lib/session-context';
 import { useTheme } from '@/lib/theme';
 import { getAssetAlbumTitles, isLimitedAccess } from '@/lib/media';
@@ -12,7 +13,7 @@ import { ClassifyPhoto } from '@/components/ClassifyPhoto';
 import { AlbumBar, type AlbumBarHandle } from '@/components/AlbumBar';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { SpotlightTutorial } from '@/components/SpotlightTutorial';
-import { Chevron, GearIcon, InfoIcon, UndoIcon } from '@/components/GestureIcons';
+import { Chevron, GearIcon, InfoIcon, SortIcon, UndoIcon } from '@/components/GestureIcons';
 import type { SortOrder } from '@/types';
 
 /**
@@ -25,13 +26,22 @@ import type { SortOrder } from '@/types';
 export default function ClassifyScreen() {
   const { bg, text, muted, border, card, dark } = useTheme();
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight, fontScale } = useWindowDimensions();
+  // 排序按鈕改用實測的 subBar 寬度判斷可用空間；首次量測前以視窗寬度（扣 insets）推估，
+  // 避免某些 Android 裝置 insets 回傳異常偏大導致永遠只顯示圖示。
+  const [subBarWidth, setSubBarWidth] = useState<number | null>(null);
+  const showSortLabel =
+    subBarWidth !== null
+      ? subBarWidth >= 220 * fontScale
+      : windowWidth - insets.left - insets.right >= 240 * fontScale;
   const [screenHeight, setScreenHeight] = useState(windowHeight);
   const bottomLimit = Math.floor(Math.max(0, screenHeight - insets.top - insets.bottom) * 0.25);
   const bottomControls = useRef<View>(null);
-  const [permission, requestPermission] = usePermissions();
+  const [permission, requestPermission, getPermission] = usePermissions();
   const [pickerVisible, setPickerVisible] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [permissionActionBusy, setPermissionActionBusy] = useState(false);
+  const [permissionActionError, setPermissionActionError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [dropMode, setDropMode] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
@@ -69,6 +79,12 @@ export default function ClassifyScreen() {
 
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const appState = useRef(AppState.currentState);
+  const permissionRef = useRef(permission);
+  const refreshAfterSettingsRef = useRef(false);
+
+  useEffect(() => {
+    permissionRef.current = permission;
+  }, [permission]);
 
   useEffect(() => {
     if (permission === null) {
@@ -102,6 +118,55 @@ export default function ClassifyScreen() {
     if (noticeTimer.current) clearTimeout(noticeTimer.current);
     noticeTimer.current = setTimeout(() => setNotice(null), 2200);
   }, []);
+
+  const openAppPermissionSettings = useCallback(async () => {
+    refreshAfterSettingsRef.current = Boolean(permission?.granted);
+    try {
+      await Linking.openSettings();
+    } catch {
+      refreshAfterSettingsRef.current = false;
+      setPermissionActionError('無法開啟權限設定，請到系統設定允許 PicSorter 存取照片。');
+    }
+  }, [permission?.granted]);
+
+  const handleRequestPhotoAccess = useCallback(async () => {
+    if (permissionActionBusy) return;
+    setPermissionActionBusy(true);
+    setPermissionActionError(null);
+    try {
+      if (permission?.canAskAgain) {
+        const updatedPermission = await requestPermission();
+        if (updatedPermission.granted && session.boot === 'ready') session.setSource(session.source);
+      } else {
+        await openAppPermissionSettings();
+      }
+    } catch {
+      setPermissionActionError('無法要求相簿權限，請稍後再試。');
+    } finally {
+      setPermissionActionBusy(false);
+    }
+  }, [openAppPermissionSettings, permission, permissionActionBusy, requestPermission, session]);
+
+  const handleManagePhotoAccess = useCallback(async () => {
+    if (permissionActionBusy) return;
+    setPermissionActionBusy(true);
+    setPermissionActionError(null);
+    try {
+      const supportsPicker = Platform.OS === 'ios' || (Platform.OS === 'android' && Number(Platform.Version) >= 34);
+      if (supportsPicker) {
+        await presentPermissionsPicker();
+        await getPermission();
+        session.setSource(session.source);
+      } else {
+        await openAppPermissionSettings();
+      }
+    } catch {
+      setPermissionActionError('無法開啟照片選擇器，請在設定中調整 PicSorter 的照片權限。');
+      await openAppPermissionSettings();
+    } finally {
+      setPermissionActionBusy(false);
+    }
+  }, [getPermission, openAppPermissionSettings, permissionActionBusy, session]);
 
   const classifyToAlbum = session.classifyCurrent;
   const dropPhoto = useCallback(async (point: { x: number; y: number }): Promise<boolean> => {
@@ -145,12 +210,25 @@ export default function ClassifyScreen() {
       const returnedToApp = appState.current !== 'active' && nextState === 'active';
       appState.current = nextState;
       if (!returnedToApp) return;
+      void getPermission().then((updatedPermission) => {
+        const previousPermission = permissionRef.current;
+        const shouldRefreshQueue =
+          refreshAfterSettingsRef.current ||
+          !previousPermission?.granted && updatedPermission.granted ||
+          previousPermission?.accessPrivileges !== updatedPermission.accessPrivileges;
+        refreshAfterSettingsRef.current = false;
+        permissionRef.current = updatedPermission;
+        if (updatedPermission.granted) setPermissionActionError(null);
+        if (shouldRefreshQueue && updatedPermission.granted && session.boot === 'ready') {
+          session.setSource(session.source);
+        }
+      });
       void session.refreshCurrentAsset().then((result) => {
         if (result === 'missing') showNotice('照片已在系統檢視器中刪除，已從待處理列排除');
       });
     });
     return () => subscription.remove();
-  }, [session, showNotice]);
+  }, [getPermission, session, showNotice]);
 
   const handleSwipeUp = useCallback(async () => {
     const ok = await session.classifyCurrent('album');
@@ -228,9 +306,16 @@ export default function ClassifyScreen() {
         <Text style={[styles.title, { color: text }]}>需要相簿權限</Text>
         <Text style={[styles.desc, { color: muted }]}>
           揀影只在本機整理照片，不會上傳。請允許讀取照片才能開始。
+          {!permission.canAskAgain ? '\n系統已停止顯示權限提示，請開啟 PicSorter 的權限設定。' : ''}
         </Text>
-        <Pressable style={[styles.primaryBtn, { borderColor: text }]} onPress={() => void requestPermission()}>
-          <Text style={{ color: text, fontWeight: '700' }}>要求權限</Text>
+        {permissionActionError ? <Text style={[styles.permissionError, { color: muted }]}>{permissionActionError}</Text> : null}
+        <Pressable
+          style={[styles.primaryBtn, { borderColor: text }, permissionActionBusy && styles.permissionBtnDisabled]}
+          disabled={permissionActionBusy}
+          onPress={() => void handleRequestPhotoAccess()}>
+          <Text style={{ color: text, fontWeight: '700' }}>
+            {permissionActionBusy ? '處理中…' : permission.canAskAgain ? '重新要求相簿權限' : '開啟 App 權限設定'}
+          </Text>
         </Pressable>
       </SafeAreaView>
     );
@@ -301,28 +386,56 @@ export default function ClassifyScreen() {
       </View>
 
       {/* 次頂部資訊條：張數進度 ＋ 排序切換 */}
-      <View style={[styles.subBar, { borderColor: border }]}>
-        <Text style={[styles.counter, { color: muted }]}>
-          {session.positionLabel} · 已分 {session.processedCount} · 待刪 {session.trashCount}
+      <View
+        style={[styles.subBar, { borderColor: border }]}
+        onLayout={(event) => setSubBarWidth(event.nativeEvent.layout.width)}>
+        <Text numberOfLines={1} style={[styles.counter, { color: muted }]}>
+          {session.positionLabel.replace(/\s/g, '')}
         </Text>
-        <Pressable onPress={toggleSort} hitSlop={8} style={[styles.sortPill, { borderColor: border, backgroundColor: card }]}>
-          <Text style={[styles.sortText, { color: muted }]}>
-            {session.sortOrder === 'newest' ? '⇅ 最新優先' : '⇅ 最舊優先'}
-          </Text>
+        <Pressable
+          onPress={toggleSort}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`切換排序，目前依${session.sortOrder === 'newest' ? '最新' : '最舊'}優先`}
+          style={[
+            styles.sortPill,
+            showSortLabel ? styles.sortPillWithLabel : styles.sortPillIconOnly,
+            { borderColor: border, backgroundColor: card },
+          ]}>
+          <SortIcon size={18} color={muted} />
+          {showSortLabel ? (
+            <Text style={[styles.sortLabel, { color: muted }]}>
+              {session.sortOrder === 'newest' ? '最新優先' : '最舊優先'}
+            </Text>
+          ) : null}
         </Pressable>
       </View>
 
       {session.limitedAccess ? (
         <View style={[styles.limitedBanner, { borderColor: border }]}>
-          <Text style={[styles.limitedText, { color: muted }]}>
+          <Text style={[styles.limitedText, { color: muted, flex: 1 }]}>
             你只授權了部分照片，目前僅能整理已授權內容。
           </Text>
+          <Pressable
+            onPress={() => void handleManagePhotoAccess()}
+            disabled={permissionActionBusy}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="更改允許存取的照片"
+            style={permissionActionBusy && styles.permissionBtnDisabled}>
+            <Text style={[styles.limitedManage, { color: text }]}>
+              {permissionActionBusy ? '處理中…' : '更改照片權限'}
+            </Text>
+          </Pressable>
         </View>
       ) : null}
+      {session.limitedAccess && permissionActionError ? (
+        <Text style={[styles.permissionError, { color: muted, textAlign: 'center' }]}>{permissionActionError}</Text>
+      ) : null}
 
-      {/* 中央照片（手勢卡） */}
+      {/* 中央照片（手勢卡）：重建待處理列（換來源/排序）時顯示載入中，避免殘留舊排序照片造成錯覺 */}
       <View style={[styles.photoArea, dropMode && { zIndex: 10, elevation: 10 }]} pointerEvents="box-none">
-        {session.loading && session.queue.length === 0 ? (
+        {session.reloading || (session.loading && session.queue.length === 0) ? (
           <Text style={{ color: muted }}>讀取照片中…</Text>
         ) : (
           <ClassifyPhoto
@@ -520,8 +633,7 @@ const styles = StyleSheet.create({
   },
   subBar: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
+    gap: 8,
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
@@ -531,13 +643,19 @@ const styles = StyleSheet.create({
   sortPill: {
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  sortText: { fontSize: 11, fontWeight: '600' },
-  limitedBanner: { borderBottomWidth: 1, padding: 8 },
-  limitedText: { fontSize: 12, textAlign: 'center' },
-  counter: { fontSize: 12, fontWeight: '500' },
+  sortPillWithLabel: { flexDirection: 'row', gap: 5, paddingHorizontal: 8 },
+  sortPillIconOnly: { width: 34 },
+  sortLabel: { fontSize: 11, fontWeight: '600' },
+  limitedBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, padding: 8 },
+  limitedText: { fontSize: 12 },
+  limitedManage: { fontSize: 12, fontWeight: '700', paddingLeft: 8 },
+  permissionBtnDisabled: { opacity: 0.55 },
+  permissionError: { fontSize: 12, textAlign: 'center' },
+  counter: { flex: 1, minWidth: 0, fontSize: 12, fontWeight: '500' },
   photoArea: { flex: 1, minHeight: 0, alignItems: 'center', justifyContent: 'center' },
   notice: {
     position: 'absolute',

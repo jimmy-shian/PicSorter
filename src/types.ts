@@ -19,6 +19,8 @@ export interface ClassifyItem {
   assetId: string;
   uri: string;
   fallbackUri?: string;
+  /** 在目前查詢頁的原始索引，計數時包含無法讀取 URI 的素材。 */
+  sourceIndex?: number;
   width: number;
   height: number;
   creationTime: number | null;

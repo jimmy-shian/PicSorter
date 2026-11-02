@@ -34,6 +34,7 @@ export default function ReviewScreen() {
   const trashApplied = useMemo(() => decisionsList.filter((d) => d.action === 'trash' && d.applied).length, [decisionsList]);
   const albumPending = useMemo(() => decisionsList.filter((d) => d.action === 'album' && !d.applied).length, [decisionsList]);
   const albumApplied = useMemo(() => decisionsList.filter((d) => d.action === 'album' && d.applied).length, [decisionsList]);
+  const skipCount = useMemo(() => decisionsList.filter((d) => d.action === 'skip').length, [decisionsList]);
   const totalPending = trashPending + albumPending;
 
   const perAlbum = useMemo(() => {
@@ -84,7 +85,7 @@ export default function ReviewScreen() {
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <Text style={[styles.title, { color: text }]}>本次整理結果</Text>
         <Text style={[styles.sub, { color: muted }]}>
-          已分類 {albumPending + albumApplied} 張 · 待刪除 {trashPending} 張{trashApplied > 0 ? `（已刪除 ${trashApplied} 張）` : ''}
+          已分類 {albumPending + albumApplied} 張 · 待刪除 {trashPending} 張{trashApplied > 0 ? `（已刪除 ${trashApplied} 張）` : ''}{skipCount > 0 ? ` · 略過 ${skipCount} 張，保持不動` : ''}
         </Text>
         {session.processedCount === 0 ? (
           <Text style={[styles.empty, { color: muted }]}>尚無分類紀錄，請返回分類至少一張照片。</Text>
@@ -129,7 +130,10 @@ export default function ReviewScreen() {
 
         <Text style={[styles.note, { color: muted }]}>
           {totalPending === 0 && session.processedCount > 0
-            ? '本次所有變更已成功套用至系統相簿。'
+            ? [
+                albumApplied + trashApplied > 0 ? '本次變更已成功套用至系統相簿。' : '',
+                skipCount > 0 ? `略過 ${skipCount} 張，照片保持不動。` : '',
+              ].filter(Boolean).join(' ')
             : '此階段所有修正只更新待執行紀錄，不會立即修改系統相簿或刪除照片（規格 §3.2–3.4）。'}
         </Text>
 

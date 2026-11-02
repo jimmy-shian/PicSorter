@@ -147,6 +147,21 @@ export function GearIcon({ size = 22, color = '#000' }: CircleIconProps) {
   );
 }
 
+/** 排序切換：上下方向箭頭，以圖示維持窄螢幕資訊列單行。 */
+export function SortIcon({ size = 18, color = '#000' }: CircleIconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M7 20V4M4 7L7 4L10 7M17 4V20M14 17L17 20L20 17"
+        stroke={color}
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 /** 小 chevron（展開 / 更換 / 下拉用），取代 ▲ › ▼ 文字字元。 */
 export function Chevron({ size = 12, color = '#000', direction = 'up' }: CircleIconProps & { direction?: 'up' | 'right' | 'down' }) {
   const pts = direction === 'up' ? '4,10 8,6 12,10' : direction === 'right' ? '6,4 10,8 6,12' : '4,6 8,10 12,6';

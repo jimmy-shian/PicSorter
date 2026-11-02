@@ -29,7 +29,7 @@ import {
   getSessionRow,
   type DecisionRow,
 } from '@/lib/db';
-import { getPhotoPage, getItemById, listTargetAlbums, isRootDcim } from '@/lib/media';
+import { getPhotoCount, getPhotoPage, getItemById, listTargetAlbums, isRootDcim } from '@/lib/media';
 import { ensureOrderRows, getAlbumEntries } from '@/lib/album-order';
 import { loadGestureAlbumSettings } from '@/lib/gesture-album-storage';
 import {
@@ -90,6 +90,8 @@ interface SessionState {
   positionLabel: string;
   hasMore: boolean;
   loading: boolean;
+  /** true 表示正在整批重建待處理列（切換來源/排序），畫面應顯示載入中而非殘影 */
+  reloading: boolean;
   limitedAccess: boolean;
   targets: TargetAlbum[];
   selectedTargetId: string | null;
@@ -125,7 +127,7 @@ interface SessionState {
     patch: { action: DecisionAction; targetAlbumId?: string | null },
   ) => Promise<void>;
   removeDecisions: (assetIds: string[]) => Promise<void>;
-  /** 舊決定列缺 uri 時補齊；系統中已消失的照片順手清掉幽靈決定 */
+  /** 補齊缺漏或舊檔案路徑 URI；系統中已消失且沒有 URI 的照片清掉幽靈決定 */
   backfillMissingUris: () => Promise<void>;
   /**
    * P6 執行套用管線：跑完後從 DB 重建 decisions（含 applied/failed），
@@ -174,6 +176,23 @@ function toDecision(r: DecisionRow): Decision {
   };
 }
 
+/** 記憶體決定 → 資料列形狀：切換排序/來源時帶入 startSession，避免已分紀錄被清空 */
+function toDecisionRows(map: Map<string, Decision>): DecisionRow[] {
+  return [...map.values()].map((d) => ({
+    asset_id: d.assetId,
+    action: d.action,
+    target_album_id: d.targetAlbumId,
+    target_album_title: d.targetAlbumTitle,
+    uri: d.uri,
+    width: d.width,
+    height: d.height,
+    applied: d.applied ? 1 : 0,
+    failed: d.failed,
+    last_error: d.lastError,
+    created_at: 0,
+  }));
+}
+
 export function SessionProvider({ children }: { children: ReactNode }) {
   const db = useSQLiteContext();
   const [boot, setBoot] = useState<BootState>('idle');
@@ -183,8 +202,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [sortOrder, setSortOrderState] = useState<SortOrder>('newest');
   const [queue, setQueue] = useState<ClassifyItem[]>([]);
   const [index, setIndex] = useState(0);
+  const [loadedCount, setLoadedCount] = useState(0);
+  const [totalCount, setTotalCount] = useState<number | null>(null);
+  const [totalCountResolved, setTotalCountResolved] = useState(false);
+  const [positions, setPositions] = useState<Map<string, number>>(new Map());
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [reloading, setReloading] = useState(false);
   const [limitedAccess, setLimitedAccess] = useState(false);
   const [targets, setTargets] = useState<TargetAlbum[]>([]);
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
@@ -303,7 +327,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   /** queue/index 的 ref 鏡像：撤銷恢復等非同步流程需要讀取最新值，避免閉包過期 */
   const queueRef = useRef<ClassifyItem[]>([]);
   const indexRef = useRef(0);
+  /** 已載入素材在目前排序中的原始位置，包含已分類或略過的項目。 */
+  const positionsRef = useRef<Map<string, number>>(new Map());
   const undoLockRef = useRef(false);
+  /** 翻頁鎖：loading state 在同一 tick 內可能過期，以 ref 確保不重入 */
+  const loadMoreLockRef = useRef(false);
 
   const setBootState = useCallback((b: BootState) => {
     bootRef.current = b;
@@ -350,6 +378,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setSourceState(src);
       setSortOrderState(order);
       setLoading(true);
+      setReloading(true);
+      setTotalCount(null);
+      setTotalCountResolved(false);
+      void getPhotoCount(src)
+        .then((count) => {
+          if (req === reqIdRef.current) {
+            setTotalCount(count);
+            setTotalCountResolved(true);
+          }
+        })
+        .catch(() => {
+          // 總數查詢失敗時仍用已載入張數顯示進度，不影響照片整理。
+          if (req === reqIdRef.current) setTotalCountResolved(true);
+        });
       try {
         let sid = opts?.existingId;
         if (!sid) {
@@ -363,6 +405,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             'open',
             Date.now(),
           );
+        } else {
+          // 同一工作內切換來源/排序：只更新欄位讓下次恢復沿用最新設定，
+          // 既有分類紀錄全數保留，已分照片不會重新出現在待處理列。
+          await db.runAsync(
+            'UPDATE sessions SET source_album_id = ?, source_album_title = ?, sort_order = ? WHERE id = ?',
+            src.id,
+            src.title,
+            order,
+            sid,
+          );
         }
         if (req !== reqIdRef.current) return;
         sessionRef.current = sid;
@@ -373,7 +425,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         const hist: { id: string; skipped: boolean }[] = [];
         for (const r of pre) {
           map.set(r.asset_id, toDecision(r));
-          hist.push({ id: r.asset_id, skipped: r.action === 'skip' });
+          // skip 的 applied=1 代表「不需套用系統變更」，仍可撤銷；
+          // 只有已套用的分類或刪除決定才從撤銷歷史排除。
+          if (r.action === 'skip' || !(r.applied ?? 0)) {
+            hist.push({ id: r.asset_id, skipped: r.action === 'skip' });
+          }
         }
         historyRef.current = hist;
         setCanUndo(hist.length > 0);
@@ -385,6 +441,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
         const decidedIds = new Set(map.keys());
         const acc: ClassifyItem[] = [];
+        const queuedIds = new Set<string>();
+        const positions = new Map<string, number>();
         let offset = 0;
         let more = true;
         while (acc.length < FIRST_BATCH && more) {
@@ -398,15 +456,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             break;
           }
           if (req !== reqIdRef.current) return;
-          offset += page.items.length;
+          const pageStart = offset;
+          // offset 以原始素材數累加：getUri 失敗被略過的張數也要計入，
+          // 否則下一頁會從中間重抓，產生重複照片。
+          offset += page.fetched;
           more = page.hasMore;
-          for (const it of page.items) {
-            if (!decidedIds.has(it.assetId)) acc.push(it);
+          for (let i = 0; i < page.items.length; i += 1) {
+            const it = page.items[i];
+            if (!positions.has(it.assetId)) positions.set(it.assetId, pageStart + (it.sourceIndex ?? i) + 1);
+            if (!decidedIds.has(it.assetId) && !queuedIds.has(it.assetId)) {
+              acc.push(it);
+              queuedIds.add(it.assetId);
+            }
           }
-          if (page.items.length === 0) break;
+          if (page.fetched === 0) break;
         }
         if (req !== reqIdRef.current) return;
+        positionsRef.current = positions;
+        setPositions(positions);
         offsetRef.current = offset;
+        setLoadedCount(offset);
         queueRef.current = acc;
         setQueue(acc);
         setHasMore(more);
@@ -416,12 +485,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         // 兜底：建工作失敗（DB 寫入失敗等）也不卡在 loading，
         // 給空佇列讓畫面可用（顯示「沒有更多照片了」而非無限轉圈）。
         offsetRef.current = 0;
+        positionsRef.current = new Map();
+        setPositions(new Map());
+        setLoadedCount(0);
         queueRef.current = [];
         setQueue([]);
         setHasMore(false);
         setBootState('ready');
       } finally {
-        if (req === reqIdRef.current) setLoading(false);
+        if (req === reqIdRef.current) {
+          setLoading(false);
+          setReloading(false);
+        }
       }
     },
     [db, loadTargets, setBootState],
@@ -515,17 +590,25 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const setSource = useCallback(
     (s: SourceAlbum) => {
       if (bootRef.current !== 'ready') return;
-      void startSession(s, sortOrderRef.current);
+      // 帶著原工作與既有決定重建待處理列：已分照片不會重新出現，計數不會歸零
+      void startSession(s, sortOrderRef.current, {
+        existingId: sessionRef.current ?? undefined,
+        preloaded: toDecisionRows(decisions),
+      });
     },
-    [startSession],
+    [startSession, decisions],
   );
 
   const setSortOrder = useCallback(
     (o: SortOrder) => {
       if (bootRef.current !== 'ready') return;
-      void startSession(sourceRef.current, o);
+      // 帶著原工作與既有決定重建待處理列：已分照片不會重新出現，計數不會歸零
+      void startSession(sourceRef.current, o, {
+        existingId: sessionRef.current ?? undefined,
+        preloaded: toDecisionRows(decisions),
+      });
     },
-    [startSession],
+    [startSession, decisions],
   );
 
   const selectTarget = useCallback((id: string) => {
@@ -549,13 +632,32 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [loadTargets]);
 
   const loadMore = useCallback(async () => {
-    if (loading || !hasMore) return;
+    if (loadMoreLockRef.current || !hasMore) return;
+    loadMoreLockRef.current = true;
     setLoading(true);
+    const req = reqIdRef.current;
     try {
       const page = await getPhotoPage(sourceRef.current, offsetRef.current, sortOrderRef.current, PAGE_SIZE);
+      // 等待期間已切換工作（換來源/換排序/重開）：過期分頁一律丟棄，
+      // 否則舊排序的照片會被附加到新佇列、offset 也會被重複累加。
+      if (req !== reqIdRef.current) return;
+      const pageStart = offsetRef.current;
       const decided = new Set(decisions.keys());
-      const fresh = page.items.filter((it) => !decided.has(it.assetId));
-      offsetRef.current += page.items.length;
+      const queued = new Set(queueRef.current.map((it) => it.assetId));
+      const positions = new Map(positionsRef.current);
+      const fresh: ClassifyItem[] = [];
+      for (let i = 0; i < page.items.length; i += 1) {
+        const item = page.items[i];
+        if (!positions.has(item.assetId)) positions.set(item.assetId, pageStart + (item.sourceIndex ?? i) + 1);
+        if (!decided.has(item.assetId) && !queued.has(item.assetId)) {
+          fresh.push(item);
+          queued.add(item.assetId);
+        }
+      }
+      positionsRef.current = positions;
+      setPositions(positions);
+      offsetRef.current += page.fetched;
+      setLoadedCount(offsetRef.current);
       const next = [...queueRef.current, ...fresh];
       queueRef.current = next;
       setQueue(next);
@@ -563,9 +665,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } catch {
       // 翻頁失敗不斷線：保持現有佇列，使用者仍可分類已載入的照片
     } finally {
-      setLoading(false);
+      loadMoreLockRef.current = false;
+      if (req === reqIdRef.current) setLoading(false);
     }
-  }, [decisions, hasMore, loading]);
+  }, [decisions, hasMore]);
 
   const refreshCurrentAsset = useCallback(async (): Promise<'available' | 'missing' | 'none'> => {
     const current = queueRef.current[indexRef.current];
@@ -844,14 +947,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const backfillMissingUris = useCallback(async () => {
     const sid = sessionRef.current;
     if (!sid) return;
-    const missing = [...decisions.values()].filter((d) => !d.uri);
-    if (missing.length === 0) return;
+    // 舊版本把 file:// 位置寫入決定列；改用可重新查詢的資產 URI，避免檔案搬動後縮圖失效。
+    const needsRefresh = [...decisions.values()].filter((d) =>
+      !d.uri || ((d.assetId.startsWith('content://') || d.assetId.startsWith('ph://')) && d.uri !== d.assetId),
+    );
+    if (needsRefresh.length === 0) return;
     const next = new Map(decisions);
-    for (const d of missing) {
+    for (const d of needsRefresh) {
       const got = await getItemById(d.assetId).catch(() => null);
       if (got) {
         await db.runAsync(
-          'UPDATE decisions SET uri = ?, width = ?, height = ? WHERE session_id = ? AND asset_id = ? AND applied = 0',
+          'UPDATE decisions SET uri = ?, width = ?, height = ? WHERE session_id = ? AND asset_id = ?',
           got.uri,
           got.width,
           got.height,
@@ -859,7 +965,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           d.assetId,
         );
         next.set(d.assetId, { ...d, uri: got.uri, width: got.width, height: got.height });
-      } else {
+      } else if (!d.uri) {
+        // 保留仍有舊 URI 的決定；權限或索引暫時不可用時不刪使用者資料。
         await db.runAsync('DELETE FROM decisions WHERE session_id = ? AND asset_id = ? AND applied = 0', sid, d.assetId);
         next.delete(d.assetId);
         historyRef.current = historyRef.current.filter((h) => h.id !== d.assetId);
@@ -896,6 +1003,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const current = queue[index] ?? null;
     const processedCount = decisions.size;
     const trashCount = [...decisions.values()].filter((d) => d.action === 'trash').length;
+    const currentPosition = current ? positions.get(current.assetId) : undefined;
+    const visiblePosition = currentPosition ?? (current ? Math.min(index + 1, loadedCount) : loadedCount);
     return {
       boot,
       pendingResume,
@@ -910,12 +1019,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       queue,
       index,
       current,
-      positionLabel:
-        queue.length === 0
-          ? '0 / 0'
-          : `${Math.min(index + 1, queue.length)} / ${queue.length}${hasMore ? '+' : ''}`,
+      positionLabel: !totalCountResolved
+        ? `${visiblePosition} / …`
+        : totalCount === null
+          ? loadedCount === 0
+            ? '0 / 0'
+            : `${visiblePosition} / ${loadedCount}${hasMore ? '+' : ''}`
+          : `${visiblePosition} / ${totalCount}`,
       hasMore,
       loading,
+      reloading,
       limitedAccess,
       targets,
       selectedTargetId,
@@ -957,6 +1070,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [
     queue,
     index,
+    loadedCount,
+    totalCount,
+    totalCountResolved,
+    positions,
     hasMore,
     decisions,
     boot,
@@ -970,6 +1087,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     source,
     sortOrder,
     loading,
+    reloading,
     limitedAccess,
     canUndo,
     targets,
