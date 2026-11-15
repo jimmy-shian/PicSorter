@@ -42,7 +42,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "postinstall": "node tools/ensure-ad-config.cjs",
+    "postinstall": "node tools/ensure-ad-config.cjs && node tools/patch-rn-cli-path.cjs",
     "pretypecheck": "node tools/ensure-ad-config.cjs",
     "prelint": "node tools/ensure-ad-config.cjs",
     "prestart": "node tools/ensure-ad-config.cjs",
