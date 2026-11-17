@@ -1,5 +1,6 @@
 import { useAdBypass } from '../lib/ad-bypass';
 import { useTheme } from '../lib/theme';
+import { useTranslation } from '@/hooks/useTranslation';
 import { ArrowCircle } from './GestureIcons';
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Modal, Pressable, Image } from 'react-native';
@@ -41,6 +42,7 @@ export function MilestoneAdModal(props: MilestoneAdModalProps) {
 function MilestoneAdContent({ visible, sortedCount, onClose }: MilestoneAdModalProps) {
   const { bypassed, ready, enableBypass } = useAdBypass();
   const { dark, bg, card, text, muted, accent, border } = useTheme();
+  const { t } = useTranslation();
   const [countdown, setCountdown] = useState(AD_DURATION);
   const clickTimestampsRef = useRef<number[]>([]);
 
@@ -106,8 +108,8 @@ function MilestoneAdContent({ visible, sortedCount, onClose }: MilestoneAdModalP
                 <Text style={[styles.checkText, { color: accent }]}>✓</Text>
               </View>
               <View style={styles.brandText}>
-                <Text style={[styles.appTitle, { color: text }]}>整理里程碑</Text>
-                <Text style={[styles.appMeta, { color: muted }]}>累計整理 {sortedCount} 張</Text>
+                <Text style={[styles.appTitle, { color: text }]}>{t('milestoneAd.title')}</Text>
+                <Text style={[styles.appMeta, { color: muted }]}>{t('milestoneAd.countLine', { count: sortedCount })}</Text>
               </View>
             </View>
             <View style={styles.countPill}>
@@ -126,7 +128,7 @@ function MilestoneAdContent({ visible, sortedCount, onClose }: MilestoneAdModalP
               {/* Google 政策：必須標示為廣告 */}
               <View style={styles.adBadgeRow}>
                 <View style={styles.adBadge}>
-                  <Text style={styles.adBadgeText}>廣告</Text>
+                  <Text style={styles.adBadgeText}>{t('ad.badge')}</Text>
                 </View>
                 {nativeAd.advertiser ? (
                   <Text numberOfLines={1} style={[styles.advertiser, { color: muted }]}>
@@ -160,7 +162,7 @@ function MilestoneAdContent({ visible, sortedCount, onClose }: MilestoneAdModalP
               <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
                 <Pressable onPress={handleBackdoorTap} style={[styles.cta, { backgroundColor: accent }]}>
                   <Text numberOfLines={1} style={[styles.ctaText, { color: bg }]}>
-                    {nativeAd.callToAction || '瞭解更多'}
+                    {nativeAd.callToAction || t('ad.ctaDefault')}
                   </Text>
                 </Pressable>
               </NativeAsset>
@@ -174,7 +176,7 @@ function MilestoneAdContent({ visible, sortedCount, onClose }: MilestoneAdModalP
               <View style={[styles.placeholder, { borderColor: border, backgroundColor: card }]}>
                 <View style={[styles.placeholderBar, { backgroundColor: accent }]} />
                 <Text style={[styles.placeholderText, { color: muted }]}>
-                  {status === 'loading' ? '廣告載入中…' : '贊助內容 · 廣告載位'}
+                  {status === 'loading' ? t('ad.loading') : t('ad.label')}
                 </Text>
               </View>
             </Pressable>
@@ -184,17 +186,17 @@ function MilestoneAdContent({ visible, sortedCount, onClose }: MilestoneAdModalP
           <View style={styles.pillRow}>
             <View style={styles.hintPill}>
               <ArrowCircle direction="left" size={16} color="#fff" />
-              <Text numberOfLines={1} style={styles.hintText}>略過</Text>
+              <Text numberOfLines={1} style={styles.hintText}>{t('common.skip')}</Text>
             </View>
             <View style={[styles.hintPill, styles.hintTrash]}>
-              <Text numberOfLines={1} style={styles.hintText}>捨棄</Text>
+              <Text numberOfLines={1} style={styles.hintText}>{t('common.discard')}</Text>
               <ArrowCircle direction="right" size={16} color="#fff" />
             </View>
           </View>
 
           {/* 底列 */}
           <View style={[styles.footer, { borderTopColor: border }]}>
-            <Text style={[styles.footerInfo, { color: muted }]}>Google 廣告贊助託播</Text>
+            <Text style={[styles.footerInfo, { color: muted }]}>{t('milestoneAd.googleSponsor')}</Text>
             <Text style={[styles.footerInfo, { color: muted }]}>yesolve studio</Text>
           </View>
         </View>

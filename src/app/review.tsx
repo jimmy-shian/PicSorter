@@ -5,6 +5,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
 import { useSession } from '@/lib/session-context';
 import { useTheme } from '@/lib/theme';
+import { useTranslation } from '@/hooks/useTranslation';
 
 const THUMB = 56;
 
@@ -14,6 +15,7 @@ const THUMB = 56;
  */
 export default function ReviewScreen() {
   const { bg, text, muted, border, card, danger } = useTheme();
+  const { t } = useTranslation();
   const session = useSession();
 
   // 進入頁面時補齊缺漏的 uri
@@ -83,12 +85,12 @@ export default function ReviewScreen() {
   return (
     <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.root, { backgroundColor: bg }]}>
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        <Text style={[styles.title, { color: text }]}>本次整理結果</Text>
+        <Text style={[styles.title, { color: text }]}>{t('review.title')}</Text>
         <Text style={[styles.sub, { color: muted }]}>
-          已分類 {albumPending + albumApplied} 張 · 待刪除 {trashPending} 張{trashApplied > 0 ? `（已刪除 ${trashApplied} 張）` : ''}{skipCount > 0 ? ` · 略過 ${skipCount} 張，保持不動` : ''}
+          {t('review.summaryLine', { classified: albumPending + albumApplied, pending: trashPending, deleted: trashApplied, skipped: skipCount })}
         </Text>
         {session.processedCount === 0 ? (
-          <Text style={[styles.empty, { color: muted }]}>尚無分類紀錄，請返回分類至少一張照片。</Text>
+          <Text style={[styles.empty, { color: muted }]}>{t('review.emptyHint')}</Text>
         ) : null}
 
         {perAlbum.map((a) => (
@@ -101,11 +103,11 @@ export default function ReviewScreen() {
             <View style={styles.rowText}>
               <Text style={[styles.albumName, { color: text }]}>{a.title}</Text>
               <Text style={[styles.count, { color: muted }]}>
-                {a.count} 張 {a.pendingCount < a.count ? `(已套用 ${a.count - a.pendingCount} 張)` : ''}
+                {t('review.albumCountLine', { count: a.count, applied: a.count - a.pendingCount })}
               </Text>
               {renderThumbs(a.thumbs)}
             </View>
-            <Text style={[styles.enter, { color: muted }]}>檢查 ›</Text>
+            <Text style={[styles.enter, { color: muted }]}>{t('review.inspectButton')}</Text>
           </Pressable>
         ))}
 
@@ -115,34 +117,34 @@ export default function ReviewScreen() {
             onPress={() => router.push({ pathname: '/review-detail', params: { mode: 'trash' } })}>
             <View style={styles.rowText}>
               <Text style={[styles.albumName, { color: trashPending > 0 ? danger : text }]}>
-                {trashPending > 0 ? '待刪除' : '已移入垃圾桶'}
+                {trashPending > 0 ? t('review.statusPendingTrash') : t('review.statusAppliedTrash')}
               </Text>
               <Text style={[styles.count, { color: muted }]}>
                 {trashPending > 0
-                  ? `${trashPending} 張 · 尚未真正刪除`
-                  : `${trashApplied} 張 · 已移入系統垃圾桶`}
+                  ? t('review.pendingTrashLine', { count: trashPending })
+                  : t('review.appliedTrashLine', { count: trashApplied })}
               </Text>
               {renderThumbs(trashThumbs)}
             </View>
-            <Text style={[styles.enter, { color: muted }]}>檢查 ›</Text>
+            <Text style={[styles.enter, { color: muted }]}>{t('review.inspectButton')}</Text>
           </Pressable>
         ) : null}
 
         <Text style={[styles.note, { color: muted }]}>
           {totalPending === 0 && session.processedCount > 0
             ? [
-                albumApplied + trashApplied > 0 ? '本次變更已成功套用至系統相簿。' : '',
-                skipCount > 0 ? `略過 ${skipCount} 張，照片保持不動。` : '',
+                albumApplied + trashApplied > 0 ? t('review.summaryApplied') : '',
+                skipCount > 0 ? t('review.summarySkipped', { count: skipCount }) : '',
               ].filter(Boolean).join(' ')
-            : '此階段所有修正只更新待執行紀錄，不會立即修改系統相簿或刪除照片（規格 §3.2–3.4）。'}
+            : t('review.summaryDryRun')}
         </Text>
 
         <Pressable style={[styles.applyBtn, { backgroundColor: text }]} onPress={() => router.back()}>
-          <Text style={[styles.applyText, { color: bg }]}>返回繼續分類</Text>
+          <Text style={[styles.applyText, { color: bg }]}>{t('review.backToSorting')}</Text>
         </Pressable>
         {isFinished ? (
           <Pressable style={[styles.applyBtn, { backgroundColor: text }]} onPress={() => void handleStartFresh()}>
-            <Text style={[styles.applyText, { color: bg }]}>開始新的整理</Text>
+            <Text style={[styles.applyText, { color: bg }]}>{t('review.startNew')}</Text>
           </Pressable>
         ) : (
           <Pressable
@@ -152,7 +154,7 @@ export default function ReviewScreen() {
             ]}
             disabled={totalPending === 0 || isEmpty}
             onPress={() => router.push('/apply')}>
-            <Text style={[styles.applyText, { color: totalPending === 0 ? muted : bg }]}>套用變更</Text>
+            <Text style={[styles.applyText, { color: totalPending === 0 ? muted : bg }]}>{t('navigation.apply')}</Text>
           </Pressable>
         )}
       </ScrollView>

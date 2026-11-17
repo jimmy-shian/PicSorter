@@ -16,6 +16,7 @@ import {
   type GestureAlbumDraft,
 } from '@/lib/gesture-albums';
 import { useTheme } from '@/lib/theme';
+import { useTranslation } from '@/hooks/useTranslation';
 import { AlbumSearch } from './AlbumSearch';
 import { AlbumManagerList } from './AlbumManagerList';
 
@@ -34,6 +35,7 @@ interface Props {
 
 export function GestureAlbumSheet(props: Props) {
   const { bg, card, text, muted, border } = useTheme();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const db = useSQLiteContext();
   const [draft, setDraft] = useState<GestureAlbumDraft | null>(null);
@@ -74,7 +76,7 @@ export function GestureAlbumSheet(props: Props) {
         baseline.current = JSON.stringify(next);
         setDraft(next);
       } catch {
-        if (active) setLoadError('無法載入相簿，請確認相簿存取權限後重試。');
+        if (active) setLoadError(t('gestureAlbumSheet.errorLoad'));
       } finally {
         if (active) setLoading(false);
       }
@@ -93,7 +95,7 @@ export function GestureAlbumSheet(props: Props) {
     let active = true;
     void (async () => {
       if (await getPref(db, 'has_seen_album_drag_hint', 'false') === 'true' || !active) return;
-      setNotice('長按把手拖曳可調整順序，點擊快捷標籤可互換位置');
+      setNotice(t('gestureAlbumSheet.noticeDragHint'));
       await setPref(db, 'has_seen_album_drag_hint', 'true');
     })().catch(() => {});
     return () => { active = false; };
@@ -104,8 +106,8 @@ export function GestureAlbumSheet(props: Props) {
     if (page === 'create') { setPage('select'); setNotice(''); return; }
     if (page === 'manage') { setPage('select'); setNotice(''); return; }
     if (draft && JSON.stringify(draft) !== baseline.current) {
-      Alert.alert('放棄變更？', '尚未儲存的手勢與相簿設定將會還原。已建立的相簿會保留。', [
-        { text: '取消', style: 'cancel' }, { text: '放棄', style: 'destructive', onPress: props.onClose },
+      Alert.alert(t('gestureAlbumSheet.dialogDiscardTitle'), t('gestureAlbumSheet.dialogDiscardMessage'), [
+        { text: t('gestureAlbumSheet.dialogDiscardCancel'), style: 'cancel' }, { text: t('gestureAlbumSheet.dialogDiscardConfirm'), style: 'destructive', onPress: props.onClose },
       ]);
     } else props.onClose();
   };
@@ -128,7 +130,7 @@ export function GestureAlbumSheet(props: Props) {
       await props.onSaved();
       props.onClose();
     } catch {
-      notify(committed ? '設定已儲存，但列表更新失敗，請再試一次。' : '儲存失敗，變更仍保留在此頁，請再試一次。');
+      notify(committed ? t('gestureAlbumSheet.noticeSaved') : t('gestureAlbumSheet.noticeSaveFailed'));
     } finally {
       saveLock.current = false;
       setSaving(false);
@@ -137,7 +139,7 @@ export function GestureAlbumSheet(props: Props) {
 
   const create = async () => {
     if (!draft || saveLock.current) return;
-    if (!name.trim()) { notify('請輸入相簿名稱'); return; }
+    if (!name.trim()) { notify(t('gestureAlbumSheet.noticeEmptyName')); return; }
     saveLock.current = true; setSaving(true);
     try {
       const maxRow = await db.getFirstAsync<{ m: number | null }>('SELECT MAX(sort_index) AS m FROM album_order');
@@ -156,9 +158,9 @@ export function GestureAlbumSheet(props: Props) {
       }
       setName('');
       setPage('select');
-      notify(`已建立相簿「${album.title}」，點選即可設定為手勢目標。`);
+      notify(t('gestureAlbumSheet.noticeCreated', { title: album.title }));
     } catch {
-      notify('建立失敗，請稍後再試。');
+      notify(t('gestureAlbumSheet.noticeCreateFailed'));
     } finally {
       saveLock.current = false;
       setSaving(false);
@@ -179,19 +181,19 @@ export function GestureAlbumSheet(props: Props) {
       return Number(b.pinned) - Number(a.pinned) || a.sortIndex - b.sortIndex;
     });
 
-  const title = page === 'manage' ? '管理相簿' : page === 'create' ? '新增相簿' : '分類手勢';
-  const subtitle = page === 'manage' ? '拖曳可調整順序，點擊快捷標籤可更換位置。' : page === 'create' ? '建立後可立即選為手勢目標' : '';
+  const title = page === 'manage' ? t('gestureAlbumSheet.titleManage') : page === 'create' ? t('gestureAlbumSheet.titleCreate') : t('gestureAlbumSheet.titleGesture');
+  const subtitle = page === 'manage' ? t('gestureAlbumSheet.subtitleManage') : page === 'create' ? t('gestureAlbumSheet.subtitleCreate') : '';
 
   return (
     <Modal visible={props.visible} transparent statusBarTranslucent animationType="slide" onRequestClose={requestClose}>
       <View style={styles.backdrop}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={requestClose} accessibilityRole="button" accessibilityLabel="關閉相簿設定" />
+        <Pressable style={StyleSheet.absoluteFill} onPress={requestClose} accessibilityRole="button" accessibilityLabel={t('gestureAlbumSheet.accessibilityClose')} />
         <KeyboardAvoidingView behavior="padding" style={[styles.sheet, { backgroundColor: bg }]} accessibilityViewIsModal>
           <View style={styles.header}>
             <View style={[styles.handle, { backgroundColor: muted }]} />
             <View style={styles.titleRow}>
               {page === 'create' && (
-                <Pressable disabled={saving} onPress={() => setPage('select')} style={styles.back} accessibilityRole="button" accessibilityLabel="返回選擇相簿">
+                <Pressable disabled={saving} onPress={() => setPage('select')} style={styles.back} accessibilityRole="button" accessibilityLabel={t('gestureAlbumSheet.accessibilityBack')}>
                   <Text style={{ color: text, fontSize: 28 }}>‹</Text>
                 </Pressable>
               )}
@@ -203,8 +205,8 @@ export function GestureAlbumSheet(props: Props) {
                   onPress={() => { setNotice(''); setPage('manage'); }}
                   style={styles.headerActionBtn}
                   accessibilityRole="button"
-                  accessibilityLabel="編輯相簿順序與快捷">
-                  <Text style={{ color: ACCENT, fontSize: 16, fontWeight: '600' }}>編輯</Text>
+                  accessibilityLabel={t('gestureAlbumSheet.accessibilityEditOrder')}>
+                  <Text style={{ color: ACCENT, fontSize: 16, fontWeight: '600' }}>{t('common.edit')}</Text>
                 </Pressable>
               )}
               {page === 'manage' && (
@@ -213,8 +215,8 @@ export function GestureAlbumSheet(props: Props) {
                   onPress={() => setPage('select')}
                   style={styles.headerActionBtn}
                   accessibilityRole="button"
-                  accessibilityLabel="完成編輯">
-                  <Text style={{ color: ACCENT, fontSize: 16, fontWeight: '600' }}>完成編輯</Text>
+                  accessibilityLabel={t('gestureAlbumSheet.accessibilityDoneEdit')}>
+                  <Text style={{ color: ACCENT, fontSize: 16, fontWeight: '600' }}>{t('common.doneEditing')}</Text>
                 </Pressable>
               )}
             </View>
@@ -239,16 +241,16 @@ export function GestureAlbumSheet(props: Props) {
                         numberOfLines={1}
                         maxFontSizeMultiplier={1.5}
                         style={{ color: value === anchor ? bg : muted, fontSize: 16, fontWeight: value === anchor ? '600' : '400' }}>
-                        {value === 'up' ? '↑ 上滑' : '↓ 下滑'}
+                        {value === 'up' ? t('common.swipeUpShort') : t('common.swipeDownShort')}
                       </Text>
                     </Pressable>
                   ))}
                 </View>
                 <View style={styles.status}>
-                  <Text style={{ color: muted, fontSize: 13 }}>選擇相簿</Text>
+                  <Text style={{ color: muted, fontSize: 13 }}>{t('gestureAlbumSheet.selectAlbum')}</Text>
                   {anchor === 'down' && (
                     <Text style={{ color: muted, fontSize: 12 }}>
-                      快捷 {draft?.shortcutIds.filter(Boolean).length ?? 0} / 4
+                      {t('gestureAlbumSheet.shortcutCount', { index: draft?.shortcutIds.filter(Boolean).length ?? 0 })}
                     </Text>
                   )}
                 </View>
@@ -263,7 +265,7 @@ export function GestureAlbumSheet(props: Props) {
           </View>
 
           {loading ? (
-            <View style={styles.empty}><Text style={{ color: muted }}>載入相簿中…</Text></View>
+            <View style={styles.empty}><Text style={{ color: muted }}>{t('gestureAlbumSheet.loadingAlbums')}</Text></View>
           ) : loadError ? (
             <View style={styles.empty}>
               <Text style={{ color: muted }}>{loadError}</Text>
@@ -271,7 +273,7 @@ export function GestureAlbumSheet(props: Props) {
                 style={[styles.secondary, { flex: 0, paddingHorizontal: 24, borderColor: border }]}
                 onPress={() => setRetry((value) => value + 1)}
                 accessibilityRole="button">
-                <Text style={{ color: text }}>重新載入</Text>
+                <Text style={{ color: text }}>{t('gestureAlbumSheet.reload')}</Text>
               </Pressable>
             </View>
           ) : page === 'create' ? (
@@ -281,15 +283,15 @@ export function GestureAlbumSheet(props: Props) {
                 onChangeText={setName}
                 autoFocus
                 editable={!saving}
-                placeholder="例如：旅遊"
+                placeholder={t('gestureAlbumSheet.inputPlaceholder')}
                 placeholderTextColor={muted}
-                accessibilityLabel="新相簿名稱"
+                accessibilityLabel={t('gestureAlbumSheet.inputAccessibility')}
                 style={[styles.input, { color: text, borderColor: border }]}
                 returnKeyType="done"
                 onSubmitEditing={() => void create()}
               />
               <Text style={[styles.subtitle, { color: muted, marginTop: 8 }]}>
-                相簿建立後可在手勢與快捷中直接使用；套用時將自動於手機建立資料夾。
+                {t('gestureAlbumSheet.createHint')}
               </Text>
             </View>
           ) : page === 'manage' && draft ? (
@@ -315,7 +317,7 @@ export function GestureAlbumSheet(props: Props) {
                       : current,
                   );
                   if (!entry.hidden && (draft.upId === entry.id || draft.downId === entry.id || draft.shortcutIds.includes(entry.id))) {
-                    notify('已隱藏，並移除手勢設定');
+                    notify(t('gestureAlbumSheet.noticeHidden'));
                   }
                 }}
               />
@@ -331,7 +333,7 @@ export function GestureAlbumSheet(props: Props) {
               keyboardShouldPersistTaps="handled"
               ListEmptyComponent={
                 <Text style={{ color: muted, paddingVertical: 24 }}>
-                  {query ? `找不到符合「${keyword.trim()}」的相簿` : '沒有可用的相簿，可新增相簿或點右上角編輯恢復顯示。'}
+                  {query ? t('gestureAlbumSheet.emptySearch', { keyword: keyword.trim() }) : t('gestureAlbumSheet.emptyAll')}
                 </Text>
               }
               renderItem={({ item }) => {
@@ -342,7 +344,7 @@ export function GestureAlbumSheet(props: Props) {
                     disabled={saving}
                     accessibilityRole="radio"
                     accessibilityState={{ checked: selected }}
-                    accessibilityLabel={`${item.title}${anchor === 'down' && index >= 0 ? `，快捷第 ${index + 1} 位` : ''}`}
+                    accessibilityLabel={`${item.title}${anchor === 'down' && index >= 0 ? t('gestureAlbumSheet.shortcutPositionSuffix', { index: index + 1 }) : ''}`}
                     style={[
                       styles.albumRow,
                       {
@@ -405,7 +407,7 @@ export function GestureAlbumSheet(props: Props) {
                   onPress={() => { setNotice(''); setPage('create'); }}
                   style={[styles.secondary, { borderColor: border }]}>
                   <Text maxFontSizeMultiplier={1.5} style={{ color: text, fontSize: 14, fontWeight: '600' }}>
-                    ＋ 新增相簿
+                    {t('gestureAlbumSheet.addAlbum')}
                   </Text>
                 </Pressable>
               )}
@@ -423,7 +425,7 @@ export function GestureAlbumSheet(props: Props) {
                   },
                 ]}>
                 <Text maxFontSizeMultiplier={1.5} style={{ color: bg, fontSize: 17, fontWeight: '700' }}>
-                  {saving ? '處理中…' : page === 'create' ? '建立相簿' : loadError ? '關閉' : '完成'}
+                  {saving ? t('gestureAlbumSheet.buttonSaving') : page === 'create' ? t('gestureAlbumSheet.buttonCreate') : loadError ? t('gestureAlbumSheet.buttonClose') : t('gestureAlbumSheet.buttonDone')}
                 </Text>
               </Pressable>
             </View>

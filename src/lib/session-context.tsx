@@ -21,6 +21,7 @@ import type {
   TargetAlbum,
 } from '@/types';
 import { newSessionId, getPref, setPref } from '@/lib/db';
+import i18n from '@/i18n';
 import {
   abandonEmptySessions,
   abandonSession,
@@ -150,7 +151,7 @@ interface SessionState {
 
 const SessionContext = createContext<SessionState | null>(null);
 
-const DEFAULT_SOURCE: SourceAlbum = { id: null, title: '所有相片與影片' };
+const DEFAULT_SOURCE: SourceAlbum = { id: null, title: i18n.t('session.defaultSource') };
 const FIRST_BATCH = 12;
 const PAGE_SIZE = 30;
 

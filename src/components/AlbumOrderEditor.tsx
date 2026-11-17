@@ -12,6 +12,7 @@ import {
   type AlbumEntry,
 } from '@/lib/album-order';
 import { EyeIcon, EyeOffIcon, PinIcon } from '@/components/GestureIcons';
+import { useTranslation } from '@/hooks/useTranslation';
 
 interface Props {
   visible: boolean;
@@ -67,6 +68,7 @@ function DraggableRow({
  */
 export function AlbumOrderEditor({ visible, sourceId, onClose, onChanged }: Props) {
   const { bg, text, muted, border, card } = useTheme();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const db = useSQLiteContext();
   const [pinned, setPinnedList] = useState<AlbumEntry[]>([]);
@@ -133,7 +135,7 @@ export function AlbumOrderEditor({ visible, sourceId, onClose, onChanged }: Prop
                   disabled={working}
                   onPress={() => void mutate(() => setHidden(db, e.id, false))}
                   hitSlop={8}
-                  accessibilityLabel="取消隱藏"
+                  accessibilityLabel={t('albumOrderEditor.accessibilityUnhide')}
                   style={styles.iconBtn}>
                   <EyeOffIcon size={20} color={muted} />
                 </Pressable>
@@ -151,7 +153,7 @@ export function AlbumOrderEditor({ visible, sourceId, onClose, onChanged }: Prop
                     disabled={working}
                     onPress={() => void mutate(() => setPinned(db, e.id, opts.group !== 'pinned'))}
                     hitSlop={8}
-                    accessibilityLabel={opts.group === 'pinned' ? '取消固定' : '固定'}
+                    accessibilityLabel={opts.group === 'pinned' ? t('albumOrderEditor.accessibilityPinToggle') : t('albumOrderEditor.accessibilityPinToggle')}
                     style={styles.iconBtn}>
                     <PinIcon size={19} color={opts.group === 'pinned' ? text : muted} pinned={opts.group === 'pinned'} />
                   </Pressable>
@@ -159,7 +161,7 @@ export function AlbumOrderEditor({ visible, sourceId, onClose, onChanged }: Prop
                     disabled={working}
                     onPress={() => void mutate(() => setHidden(db, e.id, true))}
                     hitSlop={8}
-                    accessibilityLabel="隱藏"
+                    accessibilityLabel={t('albumOrderEditor.accessibilityHide')}
                     style={styles.iconBtn}>
                     <EyeIcon size={19} color={muted} />
                   </Pressable>
@@ -178,7 +180,7 @@ export function AlbumOrderEditor({ visible, sourceId, onClose, onChanged }: Prop
         {title}（{list.length}）
       </Text>
       {list.length === 0 ? (
-        <Text style={[styles.emptyText, { color: muted }]}>無</Text>
+        <Text style={[styles.emptyText, { color: muted }]}>{t('common.none')}</Text>
       ) : (
         list.map((e) => renderRow(e, { group }))
       )}
@@ -200,18 +202,18 @@ export function AlbumOrderEditor({ visible, sourceId, onClose, onChanged }: Prop
           ]}
           onPress={() => {}}>
           <View style={styles.handle} />
-          <Text style={[styles.title, { color: text }]}>編輯相簿顯示順序</Text>
-          <Text style={[styles.sub, { color: muted }]}>只影響本 App 底部的顯示，不修改系統相簿 · 按住 ☷ 拖曳調整順序 · 第 1 個上滑，第 2～5 個下滑快捷</Text>
+          <Text style={[styles.title, { color: text }]}>{t('albumOrderEditor.editorTitle')}</Text>
+          <Text style={[styles.sub, { color: muted }]}>{t('albumOrderEditor.editorSubtitle')}</Text>
           <ScrollView
             style={[styles.list, { backgroundColor: card }]}
             scrollEnabled={!dragging}
             showsVerticalScrollIndicator>
-            {section('已固定（排最前）', pinned, 'pinned')}
-            {section('一般', normal, 'normal')}
-            {section('已隱藏', hidden, 'hidden')}
+            {section(t('albumOrderEditor.sectionPinned'), pinned, 'pinned')}
+            {section(t('albumOrderEditor.sectionNormal'), normal, 'normal')}
+            {section(t('albumOrderEditor.sectionHidden'), hidden, 'hidden')}
           </ScrollView>
           <Pressable style={[styles.doneBtn, { backgroundColor: text }]} onPress={onClose}>
-            <Text style={{ color: bg, fontWeight: '700' }}>完成</Text>
+            <Text style={{ color: bg, fontWeight: '700' }}>{t('common.done')}</Text>
           </Pressable>
         </Pressable>
       </Pressable>

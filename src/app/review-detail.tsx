@@ -12,6 +12,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Image } from 'expo-image';
 import { useSession } from '@/lib/session-context';
 import { useTheme } from '@/lib/theme';
+import { useTranslation } from '@/hooks/useTranslation';
 import { getItemById } from '@/lib/media';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { TargetAlbumSheet } from '@/components/TargetAlbumSheet';
@@ -33,11 +34,12 @@ interface GridItem {
  */
 export default function ReviewDetailScreen() {
   const { bg, text, muted, border, card, danger } = useTheme();
+  const { t } = useTranslation();
   const session = useSession();
   const params = useLocalSearchParams<{ mode?: string; albumId?: string; title?: string }>();
   const isTrash = params.mode === 'trash';
   const albumId = typeof params.albumId === 'string' ? params.albumId : '';
-  const title = typeof params.title === 'string' && params.title ? params.title : isTrash ? '待刪除' : '相簿';
+  const title = typeof params.title === 'string' && params.title ? params.title : isTrash ? t('reviewDetail.titleTrash') : t('reviewDetail.titleAlbum');
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [typeMap, setTypeMap] = useState<Map<string, 'image' | 'video'>>(new Map());
@@ -128,7 +130,7 @@ export default function ReviewDetailScreen() {
           <Image source={{ uri: item.uri }} style={styles.thumb} contentFit="cover" />
           {isVideo ? (
             <View style={styles.videoTag} pointerEvents="none">
-              <Text style={styles.videoTagText}>▶ 影片</Text>
+              <Text style={styles.videoTagText}>▶ {t('common.video')}</Text>
             </View>
           ) : null}
         </Pressable>
@@ -145,19 +147,19 @@ export default function ReviewDetailScreen() {
     <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={[styles.root, { backgroundColor: bg }]}>
       <View style={[styles.header, { borderColor: border }]}>
         <Pressable onPress={() => router.back()}>
-          <Text style={[styles.back, { color: muted }]}>‹ 返回</Text>
+          <Text style={[styles.back, { color: muted }]}>‹ {t('common.back')}</Text>
         </Pressable>
         <Text style={[styles.headerTitle, { color: isTrash ? danger : text }]} numberOfLines={1}>
-          {title} · {items.length} 張
+          {t('reviewDetail.titleWithCount', { title, count: items.length })}
         </Text>
         <Pressable onPress={() => (selected.size === items.length && items.length > 0 ? clearAll() : selectAll())}>
-          <Text style={[styles.back, { color: muted }]}>{selected.size > 0 ? `已選 ${selected.size}` : '全選'}</Text>
+          <Text style={[styles.back, { color: muted }]}>{selected.size > 0 ? t('reviewDetail.selectionSelected', { count: selected.size }) : t('reviewDetail.selectionSelectAll')}</Text>
         </Pressable>
       </View>
 
       {items.length === 0 ? (
         <View style={styles.empty}>
-          <Text style={{ color: muted }}>此處已無本次照片（可能都已移走）。</Text>
+          <Text style={{ color: muted }}>{t('reviewDetail.emptyHere')}</Text>
         </View>
       ) : (
         <FlatList
@@ -176,24 +178,24 @@ export default function ReviewDetailScreen() {
           {isTrash ? (
             <>
               <Pressable style={[styles.actionBtn, { backgroundColor: text }]} onPress={() => setSheetVisible(true)}>
-                <Text style={[styles.actionText, { color: bg }]}>加入分類相簿</Text>
+                <Text style={[styles.actionText, { color: bg }]}>{t('reviewDetail.addToCategoryAlbum')}</Text>
               </Pressable>
               <Pressable style={styles.actionBtn} onPress={() => void run((pids) => session.removeDecisions(pids))}>
-                <Text style={[styles.actionText, { color: muted }]}>取消刪除</Text>
+                <Text style={[styles.actionText, { color: muted }]}>{t('reviewDetail.undoTrash')}</Text>
               </Pressable>
             </>
           ) : (
             <>
               <Pressable style={[styles.actionBtn, { backgroundColor: text }]} onPress={() => setSheetVisible(true)}>
-                <Text style={[styles.actionText, { color: bg }]}>改放其他相簿</Text>
+                <Text style={[styles.actionText, { color: bg }]}>{t('reviewDetail.moveToOtherAlbum')}</Text>
               </Pressable>
               <Pressable
                 style={styles.actionBtn}
                 onPress={() => void run((pids) => session.updateDecisions(pids, { action: 'trash' }))}>
-                <Text style={[styles.actionText, { color: danger }]}>改為待刪除</Text>
+                <Text style={[styles.actionText, { color: danger }]}>{t('reviewDetail.markPendingTrash')}</Text>
               </Pressable>
               <Pressable style={styles.actionBtn} onPress={() => void run((pids) => session.removeDecisions(pids))}>
-                <Text style={[styles.actionText, { color: muted }]}>移除本次分類</Text>
+                <Text style={[styles.actionText, { color: muted }]}>{t('reviewDetail.removeClassification')}</Text>
               </Pressable>
             </>
           )}
@@ -202,7 +204,7 @@ export default function ReviewDetailScreen() {
 
       <TargetAlbumSheet
         visible={sheetVisible}
-        title={isTrash ? '加入至哪個相簿' : '改放至哪個相簿'}
+        title={isTrash ? t('reviewDetail.moveDialogTitleTrash') : t('reviewDetail.moveDialogTitleAlbum')}
         targets={session.targets}
         onPick={(targetId) => void run((pids) => session.updateDecisions(pids, { action: 'album', targetAlbumId: targetId }))}
         onClose={() => setSheetVisible(false)}
@@ -210,9 +212,9 @@ export default function ReviewDetailScreen() {
 
       <ConfirmDialog
         visible={frozenNotice}
-        title="已套用，不可再修改"
-        message="這些照片已寫入系統，如需調整請到系統相簿操作。"
-        confirmText="知道了"
+        title={t('reviewDetail.appliedDialogTitle')}
+        message={t('reviewDetail.appliedDialogMessage')}
+        confirmText={t('reviewDetail.appliedDialogConfirm')}
         onConfirm={() => setFrozenNotice(false)}
         onCancel={() => setFrozenNotice(false)}
       />

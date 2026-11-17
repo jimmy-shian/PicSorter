@@ -14,6 +14,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme';
+import { useTranslation } from '@/hooks/useTranslation';
 import type { ClassifyItem, GestureAction, GestureSettings } from '@/types';
 import { ArrowCircle } from '@/components/GestureIcons';
 import { openSystemPhotoViewer } from '@/lib/system-viewer';
@@ -74,6 +75,7 @@ export function ClassifyPhoto({
   highlightTitle,
 }: Props) {
   const { bg, muted } = useTheme();
+  const { t } = useTranslation();
 
   const [area, setArea] = useState({ width: 0, height: 0 });
   const [stageState, setStageState] = useState<{ id: string; stage: RenderStage }>({
@@ -315,7 +317,7 @@ export function ClassifyPhoto({
   if (!item) {
     return (
       <View style={[styles.empty, { backgroundColor: bg }]}>
-        <Text style={{ color: muted }}>沒有更多照片了</Text>
+        <Text style={{ color: muted }}>{t('home.noMorePhotos')}</Text>
       </View>
     );
   }
@@ -334,14 +336,14 @@ export function ClassifyPhoto({
   const getActionCopy = (act: GestureAction) => {
     switch (act) {
       case 'album':
-        return targetTitle ? targetTitle : '放入相簿 (請先選)';
+        return targetTitle ? targetTitle : t('classifyPhoto.hintAlbum');
       case 'trash':
-        return '移至垃圾桶';
+        return t('classifyPhoto.hintTrash');
       case 'skip':
-        return '略過此張';
+        return t('classifyPhoto.hintSkip');
       case 'inspect':
         // 下滑手勢已改為「分入下滑目標」，查看改走工具列 ⓘ 按鈕
-        return downTargetTitle ? downTargetTitle : '下滑分類 (請先選)';
+        return downTargetTitle ? downTargetTitle : t('classifyPhoto.hintDown');
       case 'none':
         return '';
     }
@@ -366,7 +368,7 @@ export function ClassifyPhoto({
         <VideoPreview uri={activeUri} width={w} height={h} controls={false} />
       ) : stage === 'exhausted' ? (
         <View style={[styles.loadFailed, { width: w, height: h, backgroundColor: bg }]}>
-          <Text style={{ color: muted, textAlign: 'center' }}>照片載入失敗，點按重試</Text>
+          <Text style={{ color: muted, textAlign: 'center' }}>{t('classifyPhoto.loadFailed')}</Text>
         </View>
       ) : isNativeFallback ? (
         <RNImage
@@ -395,7 +397,7 @@ export function ClassifyPhoto({
       )}
       {item.mediaType === 'video' ? (
         <View style={styles.videoBadge}>
-          <Text style={styles.videoBadgeText}>▶ 影片{item.duration ? ` ${formatDuration(item.duration)}` : ''}</Text>
+          <Text style={styles.videoBadgeText}>{t('common.videoBadge')}{item.duration ? ` ${formatDuration(item.duration)}` : ''}</Text>
         </View>
       ) : null}
     </Animated.View>
@@ -437,7 +439,7 @@ export function ClassifyPhoto({
       {highlightTitle ? (
         <View style={[styles.unifiedTopHint, styles.dropHighlightBanner]} pointerEvents="none">
           <ArrowCircle direction="down" size={18} color="#fff" />
-          <Text numberOfLines={1} style={styles.hintText}>{`放入「${highlightTitle}」`}</Text>
+          <Text numberOfLines={1} style={styles.hintText}>{t('classifyPhoto.actionMove', { title: highlightTitle })}</Text>
         </View>
       ) : gestureSettings.down !== 'none' ? (
         <Animated.View style={[styles.unifiedTopHint, styles.normalHintBanner, downHintStyle]} pointerEvents="none">

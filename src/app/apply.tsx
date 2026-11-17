@@ -6,6 +6,8 @@ import { Image } from 'expo-image';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useSession } from '@/lib/session-context';
 import { useTheme } from '@/lib/theme';
+import { useTranslation } from '@/hooks/useTranslation';
+import i18n from '@/i18n';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { getApplySummary, type ApplyProgress, type ApplySummary } from '@/lib/apply';
 import { isSystemTrashAvailable } from '../../modules/pic-sorter-trash';
@@ -13,15 +15,15 @@ import { isSystemTrashAvailable } from '../../modules/pic-sorter-trash';
 type Stage = 'confirm' | 'running' | 'done';
 
 function trashDestinationCopy(): string {
-  if (Platform.OS === 'ios') return '系統「最近刪除」（30 天內可復原）';
-  if (isSystemTrashAvailable()) return '系統垃圾桶';
-  return '永久刪除（此系統沒有垃圾桶，無法復原）';
+  if (Platform.OS === 'ios') return i18n.t('apply.trashLocation.ios');
+  if (isSystemTrashAvailable()) return i18n.t('apply.trashLocation.android');
+  return i18n.t('apply.trashLocation.none');
 }
 
 function trashDoneCopy(): string {
-  if (Platform.OS === 'ios') return '已移入最近刪除';
-  if (isSystemTrashAvailable()) return '已移入垃圾桶';
-  return '已永久刪除';
+  if (Platform.OS === 'ios') return i18n.t('apply.trashDone.ios');
+  if (isSystemTrashAvailable()) return i18n.t('apply.trashDone.android');
+  return i18n.t('apply.trashDone.none');
 }
 
 /**
@@ -33,6 +35,7 @@ export default function ApplyScreen() {
   const { bg, text, muted, border, card, danger } = useTheme();
   const session = useSession();
   const db = useSQLiteContext();
+  const { t } = useTranslation();
   const [stage, setStage] = useState<Stage>('confirm');
   const [summary, setSummary] = useState<ApplySummary | null>(null);
   const [progress, setProgress] = useState<ApplyProgress>({ done: 0, total: 0, phase: 'verify', label: null });
@@ -147,9 +150,9 @@ export default function ApplyScreen() {
   if (!sessionId) {
     return (
       <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.center, { backgroundColor: bg }]}>
-        <Text style={{ color: muted }}>沒有進行中的整理，請返回分類。</Text>
+        <Text style={{ color: muted }}>{t('apply.noActiveSession')}</Text>
         <Pressable style={[styles.btn, { borderColor: border }]} onPress={() => router.back()}>
-          <Text style={{ color: text }}>返回</Text>
+          <Text style={{ color: text }}>{t('common.back')}</Text>
         </Pressable>
       </SafeAreaView>
     );
@@ -158,16 +161,16 @@ export default function ApplyScreen() {
   const trashCount = trashDialog?.count ?? summary?.trashPending ?? 0;
   const trashFirstTitle =
     Platform.OS === 'ios'
-      ? '移入最近刪除？'
+      ? t('apply.confirmTrashTitle.ios')
       : isSystemTrashAvailable()
-        ? '移入垃圾桶？'
-        : '此系統沒有垃圾桶';
+        ? t('apply.confirmTrashTitle.android')
+        : t('apply.confirmTrashTitle.none');
   const trashFirstMessage =
     Platform.OS === 'ios'
-      ? `將 ${trashCount} 張照片移至系統「最近刪除」。`
+      ? t('apply.confirmTrashMessage.ios', { count: trashCount })
       : isSystemTrashAvailable()
-        ? `將 ${trashCount} 張照片移至系統垃圾桶。`
-        : `將 ${trashCount} 張照片永久刪除？`;
+        ? t('apply.confirmTrashMessage.android', { count: trashCount })
+        : t('apply.confirmTrashMessage.none', { count: trashCount });
 
   const trashDialogs = (
     <>
@@ -177,34 +180,34 @@ export default function ApplyScreen() {
         message={trashFirstMessage}
         confirmText={
           Platform.OS === 'ios'
-            ? '移入最近刪除'
+            ? t('apply.confirmTrashButton.ios')
             : isSystemTrashAvailable()
-              ? '移入垃圾桶'
-              : '我了解，繼續'
+              ? t('apply.confirmTrashButton.android')
+              : t('apply.confirmTrashButton.none')
         }
         destructive={!isSystemTrashAvailable() && Platform.OS !== 'ios'}
-        destructiveHint="此操作會永久刪除照片，無法復原。"
+        destructiveHint={t('apply.confirmTrashDestructiveHint')}
         onConfirm={() => {
           rememberTrash.current = dontAsk && (Platform.OS === 'ios' || isSystemTrashAvailable());
           resolveTrash(Platform.OS !== 'ios' && !isSystemTrashAvailable() ? 'permanent' : 'trash');
         }}
         onCancel={() => resolveTrash('skip')}>
         {(Platform.OS === 'ios' || isSystemTrashAvailable()) && <Pressable accessibilityRole="checkbox"
-          accessibilityLabel="之後不再詢問" accessibilityState={{ checked: dontAsk }} onPress={() => setDontAsk(!dontAsk)}
+          accessibilityLabel={t('apply.confirmTrashDontAsk')} accessibilityState={{ checked: dontAsk }} onPress={() => setDontAsk(!dontAsk)}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 48 }}>
           <Text style={{ color: text, fontSize: 22 }}>{dontAsk ? '☑' : '☐'}</Text>
-          <Text style={{ color: text, fontSize: 14 }}>之後不再詢問</Text>
+          <Text style={{ color: text, fontSize: 14 }}>{t('apply.confirmTrashDontAsk')}</Text>
         </Pressable>}
       </ConfirmDialog>
       <ConfirmDialog
         visible={stage === 'running' && albumDialog !== null}
-        title="確認移動照片？"
+        title={t('apply.confirmAlbumTitle')}
         message={
           albumDialog?.title
-            ? `將 ${albumDialog.count} 張照片移至「${albumDialog.title}」？`
-            : `將 ${albumDialog?.count ?? 0} 張照片移至 ${albumDialog?.albumCount ?? 0} 個相簿？`
+            ? t('apply.confirmAlbumMessageSingle', { count: albumDialog.count, title: albumDialog.title })
+            : t('apply.confirmAlbumMessageMulti', { count: albumDialog?.count ?? 0, albumCount: albumDialog?.albumCount ?? 0 })
         }
-        confirmText="確認"
+        confirmText={t('apply.confirmAlbumConfirm')}
         onConfirm={() => resolveAlbum(true)}
         onCancel={() => resolveAlbum(false)}
       />
@@ -218,43 +221,43 @@ export default function ApplyScreen() {
     return (
       <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.root, { backgroundColor: bg }]}>
         <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-          <Text style={[styles.title, { color: text }]}>最後確認</Text>
+          <Text style={[styles.title, { color: text }]}>{t('apply.finalConfirmTitle')}</Text>
           {!s ? (
-            <Text style={{ color: muted }}>讀取中…</Text>
+            <Text style={{ color: muted }}>{t('common.reading')}</Text>
           ) : nothingPending ? (
             <>
-              <Text style={[styles.sub, { color: muted }]}>全部已套用，無待辦事項。</Text>
+              <Text style={[styles.sub, { color: muted }]}>{t('apply.allApplied')}</Text>
               <Pressable style={[styles.primary, { backgroundColor: text }]} onPress={() => void handleFinishAndFresh()}>
-                <Text style={[styles.primaryText, { color: bg }]}>完成，返回分類</Text>
+                <Text style={[styles.primaryText, { color: bg }]}>{t('apply.doneBackButton')}</Text>
               </Pressable>
             </>
           ) : (
             <>
-              <Text style={[styles.sub, { color: muted }]}>以下變更將寫入系統相簿，請檢查：</Text>
+              <Text style={[styles.sub, { color: muted }]}>{t('apply.reviewHeader')}</Text>
               {s.perAlbum.map((a) => (
                 <View key={a.albumId} style={[styles.row, { borderColor: border, backgroundColor: card }]}>
-                  <Text style={[styles.rowTitle, { color: text }]}>加入「{a.title}」</Text>
-                  <Text style={[styles.rowCount, { color: muted }]}>{a.pending} 張</Text>
+                  <Text style={[styles.rowTitle, { color: text }]}>{t('apply.addToAlbum', { title: a.title })}</Text>
+                  <Text style={[styles.rowCount, { color: muted }]}>{t('apply.countPhotos', { count: a.pending })}</Text>
                 </View>
               ))}
               {s.trashPending > 0 ? (
                 <View style={[styles.row, { borderColor: danger }]}>
-                  <Text style={[styles.rowTitle, { color: danger }]}>移入{trashDestinationCopy()}</Text>
-                  <Text style={[styles.rowCount, { color: muted }]}>{s.trashPending} 張</Text>
+                  <Text style={[styles.rowTitle, { color: danger }]}>{t('apply.moveToShort')}{trashDestinationCopy()}</Text>
+                  <Text style={[styles.rowCount, { color: muted }]}>{t('apply.countPhotos', { count: s.trashPending })}</Text>
                 </View>
               ) : null}
               {s.appliedAlbum + s.appliedTrash > 0 ? (
                 <Text style={[styles.note, { color: muted }]}>
-                  已套用：相簿 {s.appliedAlbum} 張 · 刪除 {s.appliedTrash} 張（不會重複執行）
+                  {t('apply.appliedSummary', { album: s.appliedAlbum, trash: s.appliedTrash })}
                 </Text>
               ) : null}
               <Pressable
                 style={[styles.primary, { backgroundColor: text }]}
                 onPress={() => void handleStart()}>
-                <Text style={[styles.primaryText, { color: bg }]}>套用變更</Text>
+                <Text style={[styles.primaryText, { color: bg }]}>{t('navigation.apply')}</Text>
               </Pressable>
               <Pressable style={[styles.ghost, { borderColor: border }]} onPress={() => router.back()}>
-                <Text style={[styles.primaryText, { color: text }]}>返回檢查</Text>
+                <Text style={[styles.primaryText, { color: text }]}>{t('apply.backToReview')}</Text>
               </Pressable>
             </>
           )}
@@ -268,10 +271,10 @@ export default function ApplyScreen() {
     const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
     const phaseText =
       progress.phase === 'verify'
-        ? '正在檢查相簿與照片…'
+        ? t('apply.progressVerifying')
         : progress.phase === 'album'
-          ? `正在加入${progress.label ? `「${progress.label}」` : '相簿'}…`
-          : Platform.OS === 'ios' ? '正在移入最近刪除…' : isSystemTrashAvailable() ? '正在移動至垃圾桶…' : '正在永久刪除…';
+          ? progress.label ? t('apply.progressMovingAlbum', { label: progress.label }) : t('apply.progressMovingAlbumGeneric')
+          : Platform.OS === 'ios' ? t('apply.progressMovingTrash.ios') : isSystemTrashAvailable() ? t('apply.progressMovingTrash.android') : t('apply.progressMovingTrash.none');
     return (
       <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.center, { backgroundColor: bg }]}>
 
@@ -281,9 +284,9 @@ export default function ApplyScreen() {
         </View>
         <Text style={[styles.note, { color: muted }]}>{progress.done} / {progress.total}</Text>
         <Text style={[styles.sub, { color: muted }]}>{phaseText}</Text>
-        <Text style={[styles.note, { color: muted }]}>已完成的不會因取消而回滾；取消後剩餘保持未套用。</Text>
+        <Text style={[styles.note, { color: muted }]}>{t('apply.cancelNotice')}</Text>
         <Pressable style={[styles.ghost, styles.cancelBtn, { borderColor: border }]} onPress={() => { cancelRef.current = true; }}>
-          <Text style={[styles.primaryText, { color: text }]}>取消</Text>
+          <Text style={[styles.primaryText, { color: text }]}>{t('common.cancel')}</Text>
         </Pressable>
         {trashDialogs}
       </SafeAreaView>
@@ -296,51 +299,51 @@ export default function ApplyScreen() {
   const failed = s?.failedItems ?? [];
   return (
     <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.root, { backgroundColor: bg }]}>
-      <ConfirmDialog visible={preferenceError} title="偏好未儲存" message="照片已完成處理，請到設定頁重新設定不再詢問。" confirmText="知道了"
+      <ConfirmDialog visible={preferenceError} title={t('apply.errorPrefNotSavedTitle')} message={t('apply.errorPrefNotSavedMessage')} confirmText={t('apply.errorPrefNotSavedConfirm')}
         onConfirm={() => setPreferenceError(false)} onCancel={() => setPreferenceError(false)} />
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        <Text style={[styles.title, { color: text }]}>{pendingLeft === 0 ? '整理完成' : '套用中斷'}</Text>
+        <Text style={[styles.title, { color: text }]}>{pendingLeft === 0 ? t('apply.resultComplete') : t('apply.resultInterrupted')}</Text>
         <View style={[styles.row, { borderColor: border, backgroundColor: card }]}>
-          <Text style={[styles.rowTitle, { color: text }]}>已分類</Text>
-          <Text style={[styles.rowCount, { color: muted }]}>{result?.appliedAlbum ?? 0} 張</Text>
+          <Text style={[styles.rowTitle, { color: text }]}>{t('apply.classified')}</Text>
+          <Text style={[styles.rowCount, { color: muted }]}>{t('apply.countPhotos', { count: result?.appliedAlbum ?? 0 })}</Text>
         </View>
         <View style={[styles.row, { borderColor: border, backgroundColor: card }]}>
           <Text style={[styles.rowTitle, { color: text }]}>{trashDoneCopy()}</Text>
-          <Text style={[styles.rowCount, { color: muted }]}>{result?.appliedTrash ?? 0} 張</Text>
+          <Text style={[styles.rowCount, { color: muted }]}>{t('apply.countPhotos', { count: result?.appliedTrash ?? 0 })}</Text>
         </View>
         <View style={[styles.row, { borderColor: pendingLeft > 0 ? danger : border, backgroundColor: card }]}>
-          <Text style={[styles.rowTitle, { color: pendingLeft > 0 ? danger : text }]}>未完成</Text>
-          <Text style={[styles.rowCount, { color: muted }]}>{pendingLeft} 張</Text>
+          <Text style={[styles.rowTitle, { color: pendingLeft > 0 ? danger : text }]}>{t('apply.incomplete')}</Text>
+          <Text style={[styles.rowCount, { color: muted }]}>{t('apply.countPhotos', { count: pendingLeft })}</Text>
         </View>
 
         {failed.length > 0 ? (
           <>
-            <Text style={[styles.sub, { color: muted }]}>失敗項目（可重試）：</Text>
+            <Text style={[styles.sub, { color: muted }]}>{t('apply.failedItems')}</Text>
             {failed.map((f) => (
               <View key={f.assetId} style={[styles.failRow, { borderColor: border }]}>
                 {f.uri ? <Image source={{ uri: f.uri }} style={styles.failThumb} contentFit="cover" /> : null}
                 <Text style={[styles.failReason, { color: muted }]} numberOfLines={2}>
-                  {f.reason ?? '未知錯誤'}
+                  {f.reason ?? t('apply.errorUnknown')}
                 </Text>
               </View>
             ))}
           </>
         ) : null}
         {pendingLeft > 0 && failed.length === 0 ? (
-          <Text style={[styles.note, { color: muted }]}>有項目尚未確認（例如垃圾桶未確認或已取消），照片都還在。</Text>
+          <Text style={[styles.note, { color: muted }]}>{t('apply.unconfirmedNotice')}</Text>
         ) : null}
 
         {pendingLeft > 0 ? (
           <Pressable style={[styles.primary, { backgroundColor: text }]} onPress={handleRetry}>
-            <Text style={[styles.primaryText, { color: bg }]}>重試未完成（{pendingLeft}）</Text>
+            <Text style={[styles.primaryText, { color: bg }]}>{t('apply.retryIncomplete', { count: pendingLeft })}</Text>
           </Pressable>
         ) : (
           <Pressable style={[styles.primary, { backgroundColor: text }]} onPress={() => void handleFinishAndFresh()}>
-            <Text style={[styles.primaryText, { color: bg }]}>完成，返回分類</Text>
+            <Text style={[styles.primaryText, { color: bg }]}>{t('apply.doneBackButton')}</Text>
           </Pressable>
         )}
         <Pressable style={[styles.ghost, { borderColor: border }]} onPress={() => router.back()}>
-          <Text style={[styles.primaryText, { color: text }]}>返回檢查</Text>
+          <Text style={[styles.primaryText, { color: text }]}>{t('apply.backToReview')}</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>

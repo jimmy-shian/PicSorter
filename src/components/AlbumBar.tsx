@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffec
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { useTheme } from '@/lib/theme';
+import { useTranslation } from '@/hooks/useTranslation';
 import { ConfirmDialog } from './ConfirmDialog';
 import { GestureAlbumSheet } from './GestureAlbumSheet';
 import { albumDropRects, hitAlbum, type DropRect } from '@/lib/drag-geometry';
@@ -38,6 +39,7 @@ function AlbumTarget({ album, index, hover, selected, dropMode, onPress, onLongP
   album: TargetAlbum | null; index: number; hover: boolean; selected: boolean; dropMode: boolean; onPress: () => void; onLongPress: (id: string) => void;
 }) {
   const { text, muted, border, card } = useTheme();
+  const { t } = useTranslation();
   const style = useAnimatedStyle(() => ({
     transform: [{ scale: withTiming(hover ? 1.08 : 1, { duration: 120 }) }],
     zIndex: hover ? 10 : 1,
@@ -47,8 +49,10 @@ function AlbumTarget({ album, index, hover, selected, dropMode, onPress, onLongP
       onLongPress={album ? () => onLongPress(album.id) : undefined}
       delayLongPress={350}
       disabled={dropMode} accessibilityRole="button"
-      accessibilityLabel={album ? `快捷 ${index + 1}：${album.title}${selected ? '，目前下滑目標' : ''}，點選設為下滑目標或拖曳照片放入` : `設定快捷 ${index + 1}`}
-      accessibilityHint={album ? '長按顯示完整相簿名稱' : undefined}
+      accessibilityLabel={album
+        ? t('albumBar.accessibilityShortcut', { index: index + 1, title: album.title, suffix: selected ? t('albumBar.accessibilityShortcutSuffix') : '' })
+        : t('albumBar.accessibilityShortcutEmpty', { index: index + 1 })}
+      accessibilityHint={album ? t('albumBar.accessibilityHint') : undefined}
       accessibilityState={{ selected }}
       style={[styles.album, {
         borderColor: hover ? ACCENT : selected ? ACCENT : border,
@@ -65,7 +69,7 @@ function AlbumTarget({ album, index, hover, selected, dropMode, onPress, onLongP
         fontSize: 13,
         fontWeight: hover ? '700' : '500',
       }}>
-        {album?.title.trim() || '未設定'}
+        {album?.title.trim() || t('albumBar.shortcutNotSet')}
       </Text>
     </Pressable>
   </Animated.View>;
@@ -73,6 +77,7 @@ function AlbumTarget({ album, index, hover, selected, dropMode, onPress, onLongP
 
 export const AlbumBar = forwardRef<AlbumBarHandle, Props>(function AlbumBar(props, ref) {
   const { text, muted, border } = useTheme();
+  const { t } = useTranslation();
   const { onHover } = props;
   const [sheetVisible, setSheetVisible] = useState(false);
   const [anchor, setAnchor] = useState<'up' | 'down'>('up');
@@ -117,8 +122,8 @@ export const AlbumBar = forwardRef<AlbumBarHandle, Props>(function AlbumBar(prop
     getDropTarget: async (point) => hitTarget(point),
   }), [hitTarget, onHover, measure]);
   const open = (direction: 'up' | 'down') => { setAnchor(direction); setSheetVisible(true); };
-  const up = props.targets.find((album) => album.id === props.selectedId)?.title ?? '未設定';
-  const currentDownTitle = props.targets.find((album) => album.id === props.downTargetId)?.title ?? '自訂相簿';
+  const up = props.targets.find((album) => album.id === props.selectedId)?.title ?? t('albumBar.shortcutNotSet');
+  const currentDownTitle = props.targets.find((album) => album.id === props.downTargetId)?.title ?? t('albumBar.downTargetCustom');
   const isNonShortcutTarget = Boolean(props.downTargetId && !props.shortcutIds.includes(props.downTargetId));
 
   const handleAlbumPress = useCallback((album: TargetAlbum) => {
@@ -144,11 +149,11 @@ export const AlbumBar = forwardRef<AlbumBarHandle, Props>(function AlbumBar(prop
   }, [isNonShortcutTarget, props]);
   return <>
     <View style={styles.wrap}>
-      <Pressable disabled={props.dropMode} accessibilityRole="button" accessibilityLabel={`上滑目標：${up}，編輯分類手勢`}
+      <Pressable disabled={props.dropMode} accessibilityRole="button" accessibilityLabel={t('albumBar.accessibilityUpTarget', { title: up })}
         style={[styles.gestures, { borderBottomColor: border }]} onPress={() => open('up')}>
-        <Text style={{ color: muted, fontSize: 11 }}>↑ 上滑</Text>
+        <Text style={{ color: muted, fontSize: 11 }}>{t('common.swipeUpShort')}</Text>
         <Text numberOfLines={1} style={[styles.directionText, { color: text }]}>{up}</Text>
-        <Text style={{ color: props.dropMode ? ACCENT : muted, fontSize: 11 }}>{props.dropMode ? '放開分類' : '編輯'}</Text>
+        <Text style={{ color: props.dropMode ? ACCENT : muted, fontSize: 11 }}>{props.dropMode ? t('albumBar.buttonDrop') : t('albumBar.buttonEdit')}</Text>
       </Pressable>
       <View ref={row} collapsable={false} style={styles.albums} onLayout={measure}>
         {slots.map(({ album, index }) => <AlbumTarget key={album.id} album={album} index={index}
@@ -170,10 +175,10 @@ export const AlbumBar = forwardRef<AlbumBarHandle, Props>(function AlbumBar(prop
     {pendingSwitchTarget && (
       <ConfirmDialog
         visible={pendingSwitchTarget !== null}
-        title="切換下滑相簿？"
-        message={`目前下滑相簿為「${currentDownTitle}」，確定要切換為快捷相簿「${pendingSwitchTarget.title}」嗎？`}
-        confirmText="切換"
-        cancelText="取消"
+        title={t('albumBar.dialogSwitchTitle')}
+        message={t('albumBar.dialogSwitchMessage', { current: currentDownTitle, target: pendingSwitchTarget.title })}
+        confirmText={t('albumBar.dialogSwitchConfirm')}
+        cancelText={t('albumBar.dialogSwitchCancel')}
         onConfirm={() => {
           props.onSelectDownTarget(pendingSwitchTarget.id);
           props.onLongPress(pendingSwitchTarget.id);

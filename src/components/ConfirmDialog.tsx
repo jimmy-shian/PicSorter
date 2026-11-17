@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/theme';
+import { useTranslation } from '@/hooks/useTranslation';
 
 interface Props {
   visible: boolean;
@@ -25,17 +26,24 @@ export function ConfirmDialog({
   visible,
   title,
   message,
-  confirmText = '確認',
-  cancelText = '取消',
+  confirmText,
+  cancelText,
   destructive = false,
   busy = false,
   children,
-  destructiveHint = '照片本身不受影響，只清除本機整理紀錄',
+  destructiveHint,
   onConfirm,
   onCancel,
 }: Props) {
   const { bg, text, muted, border, card, danger } = useTheme();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
+
+  const defaultConfirmText = confirmText ?? t('confirmDialog.defaultConfirm');
+  const defaultCancelText = cancelText ?? t('confirmDialog.defaultCancel');
+  const defaultDestructiveHint = destructiveHint ?? t('confirmDialog.destructiveHint');
+  const loadingText = t('confirmDialog.loading');
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <View style={styles.backdrop}>
@@ -52,19 +60,19 @@ export function ConfirmDialog({
               style={[styles.btn, { backgroundColor: card }]}
               onPress={onCancel}
               disabled={busy}>
-              <Text style={[styles.btnText, { color: muted }]}>{cancelText}</Text>
+              <Text style={[styles.btnText, { color: muted }]}>{defaultCancelText}</Text>
             </Pressable>
             <Pressable
               style={[styles.btn, { backgroundColor: destructive ? danger : text }]}
               onPress={onConfirm}
               disabled={busy}>
               <Text style={[styles.btnText, { color: destructive ? '#FFFFFF' : bg }]}>
-                {busy ? '處理中…' : confirmText}
+                {busy ? loadingText : defaultConfirmText}
               </Text>
             </Pressable>
           </View>
           {destructive ? (
-            <Text style={[styles.hint, { color: muted }]}>{destructiveHint}</Text>
+            <Text style={[styles.hint, { color: muted }]}>{defaultDestructiveHint}</Text>
           ) : null}
         </View>
       </View>

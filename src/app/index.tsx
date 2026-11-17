@@ -7,6 +7,7 @@ import * as Linking from 'expo-linking';
 import { presentPermissionsPicker, usePermissions } from 'expo-media-library';
 import { useSession } from '@/lib/session-context';
 import { useTheme } from '@/lib/theme';
+import { useTranslation } from '@/hooks/useTranslation';
 import { getAssetAlbumTitles, isLimitedAccess } from '@/lib/media';
 import { SourceAlbumPicker } from '@/components/SourceAlbumPicker';
 import { ClassifyPhoto } from '@/components/ClassifyPhoto';
@@ -25,6 +26,7 @@ import type { SortOrder } from '@/types';
  */
 export default function ClassifyScreen() {
   const { bg, text, muted, border, card, dark } = useTheme();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight, fontScale } = useWindowDimensions();
   // 排序按鈕改用實測的 subBar 寬度判斷可用空間；首次量測前以視窗寬度（扣 insets）推估，
@@ -125,9 +127,9 @@ export default function ClassifyScreen() {
       await Linking.openSettings();
     } catch {
       refreshAfterSettingsRef.current = false;
-      setPermissionActionError('無法開啟權限設定，請到系統設定允許 PicSorter 存取照片。');
+      setPermissionActionError(t('home.permissionErrorOpenSettings'));
     }
-  }, [permission?.granted]);
+  }, [permission?.granted, t]);
 
   const handleRequestPhotoAccess = useCallback(async () => {
     if (permissionActionBusy) return;
@@ -141,11 +143,11 @@ export default function ClassifyScreen() {
         await openAppPermissionSettings();
       }
     } catch {
-      setPermissionActionError('無法要求相簿權限，請稍後再試。');
+      setPermissionActionError(t('home.permissionErrorRequest'));
     } finally {
       setPermissionActionBusy(false);
     }
-  }, [openAppPermissionSettings, permission, permissionActionBusy, requestPermission, session]);
+  }, [openAppPermissionSettings, permission, permissionActionBusy, requestPermission, session, t]);
 
   const handleManagePhotoAccess = useCallback(async () => {
     if (permissionActionBusy) return;
@@ -161,12 +163,12 @@ export default function ClassifyScreen() {
         await openAppPermissionSettings();
       }
     } catch {
-      setPermissionActionError('無法開啟照片選擇器，請在設定中調整 PicSorter 的照片權限。');
+      setPermissionActionError(t('home.permissionErrorPicker'));
       await openAppPermissionSettings();
     } finally {
       setPermissionActionBusy(false);
     }
-  }, [getPermission, openAppPermissionSettings, permissionActionBusy, session]);
+  }, [getPermission, openAppPermissionSettings, permissionActionBusy, session, t]);
 
   const classifyToAlbum = session.classifyCurrent;
   const dropPhoto = useCallback(async (point: { x: number; y: number }): Promise<boolean> => {
@@ -176,33 +178,33 @@ export default function ClassifyScreen() {
       if (id) {
         const ok = await classifyToAlbum('album', id);
         if (!ok) {
-          showNotice('分類失敗，請再試一次');
+          showNotice(t('home.classifyFailed'));
           return false;
         }
         return true;
       }
       return false;
     } catch {
-      showNotice('分類失敗，請再試一次');
+      showNotice(t('home.classifyFailed'));
       return false;
     } finally {
       finishDrag();
     }
-  }, [classifyToAlbum, finishDrag, showNotice]);
+  }, [classifyToAlbum, finishDrag, showNotice, t]);
   const quickLock = useRef(false);
   const quickClassify = useCallback(async (id: string) => {
     if (quickLock.current) return;
     quickLock.current = true;
-    try { if (!await classifyToAlbum('album', id)) showNotice('分類失敗，請再試一次'); }
-    catch { showNotice('分類失敗，請再試一次'); }
+    try { if (!await classifyToAlbum('album', id)) showNotice(t('home.classifyFailed')); }
+    catch { showNotice(t('home.classifyFailed')); }
     finally { quickLock.current = false; }
-  }, [classifyToAlbum, showNotice]);
-  const gestureError = useCallback(() => showNotice('操作失敗，請再試一次'), [showNotice]);
+  }, [classifyToAlbum, showNotice, t]);
+  const gestureError = useCallback(() => showNotice(t('home.actionFailed')), [showNotice, t]);
   // 長按底部快捷晶片：頂部通知顯示完整相簿名稱（Pressable 長按後不會再觸發 onPress 分類）
   const showAlbumFullName = useCallback((id: string) => {
     const album = session.targets.find((t) => t.id === id);
-    if (album) showNotice(album.title.trim() || '未設定');
-  }, [session.targets, showNotice]);
+    if (album) showNotice(album.title.trim() || t('common.notSet'));
+  }, [session.targets, showNotice, t]);
 
   // 從系統相片檢視器回來後，外部 App 可能已刪除目前照片。
   useEffect(() => {
@@ -224,40 +226,40 @@ export default function ClassifyScreen() {
         }
       });
       void session.refreshCurrentAsset().then((result) => {
-        if (result === 'missing') showNotice('照片已在系統檢視器中刪除，已從待處理列排除');
+        if (result === 'missing') showNotice(t('home.photoDeleted'));
       });
     });
     return () => subscription.remove();
-  }, [getPermission, session, showNotice]);
+  }, [getPermission, session, showNotice, t]);
 
   const handleSwipeUp = useCallback(async () => {
     const ok = await session.classifyCurrent('album');
     if (ok) incrementCount();
-    if (!ok) showNotice('分類失敗，請重試');
-  }, [session, showNotice, incrementCount]);
+    if (!ok) showNotice(t('home.classifyFailedRetry'));
+  }, [session, showNotice, incrementCount, t]);
 
   const handleTrash = useCallback(async () => {
     const ok = await session.classifyCurrent('trash');
     if (ok) incrementCount();
-    if (!ok) showNotice('標記失敗，請重試');
-  }, [session, showNotice, incrementCount]);
+    if (!ok) showNotice(t('home.markFailed'));
+  }, [session, showNotice, incrementCount, t]);
 
   const handleSkip = useCallback(async () => {
     const ok = await session.skipCurrent();
-    if (!ok) showNotice('沒有更多照片了');
-  }, [session, showNotice]);
+    if (!ok) showNotice(t('home.noMorePhotos'));
+  }, [session, showNotice, t]);
 
   const handleSwipeDown = useCallback(async () => {
     if (!session.downTargetId) {
-      showNotice('請在「編輯」設定下滑相簿');
+      showNotice(t('home.setDownTarget'));
       return;
     }
     const title = session.targets.find((t) => t.id === session.downTargetId)?.title ?? '';
     const ok = await session.classifyCurrent('album', session.downTargetId);
     if (ok) incrementCount();
-    if (ok) showNotice(`已放入「${title}」`);
-    else showNotice('分類失敗，請重試');
-  }, [session, showNotice, incrementCount]);
+    if (ok) showNotice(t('home.addedToAlbum', { title }));
+    else showNotice(t('home.classifyFailedRetry'));
+  }, [session, showNotice, incrementCount, t]);
 
   const currentItem = session.current;
   const handleInspect = useCallback(async () => {
@@ -274,8 +276,8 @@ export default function ClassifyScreen() {
   }, [currentItem]);
 
   const handleNeedTarget = useCallback(() => {
-    showNotice('請點「↑ 上滑」設定目標相簿');
-  }, [showNotice]);
+    showNotice(t('home.setUpTarget'));
+  }, [showNotice, t]);
 
   const handleFinish = useCallback(() => {
     if (session.processedCount === 0) {
@@ -295,7 +297,7 @@ export default function ClassifyScreen() {
   if (permission === null) {
     return (
       <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={[styles.center, { backgroundColor: bg }]}>
-        <Text style={{ color: muted }}>正在請求相簿權限…</Text>
+        <Text style={{ color: muted }}>{t('home.requestingPermission')}</Text>
       </SafeAreaView>
     );
   }
@@ -303,10 +305,10 @@ export default function ClassifyScreen() {
   if (!permission.granted) {
     return (
       <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={[styles.center, { backgroundColor: bg }]}>
-        <Text style={[styles.title, { color: text }]}>需要相簿權限</Text>
+        <Text style={[styles.title, { color: text }]}>{t('home.permissionRequiredTitle')}</Text>
         <Text style={[styles.desc, { color: muted }]}>
-          揀影只在本機整理照片，不會上傳。請允許讀取照片才能開始。
-          {!permission.canAskAgain ? '\n系統已停止顯示權限提示，請開啟 PicSorter 的權限設定。' : ''}
+          {t('home.permissionRationale')}
+          {!permission.canAskAgain ? '\n' + t('home.permissionLimitedHint') : ''}
         </Text>
         {permissionActionError ? <Text style={[styles.permissionError, { color: muted }]}>{permissionActionError}</Text> : null}
         <Pressable
@@ -314,7 +316,7 @@ export default function ClassifyScreen() {
           disabled={permissionActionBusy}
           onPress={() => void handleRequestPhotoAccess()}>
           <Text style={{ color: text, fontWeight: '700' }}>
-            {permissionActionBusy ? '處理中…' : permission.canAskAgain ? '重新要求相簿權限' : '開啟 App 權限設定'}
+            {permissionActionBusy ? t('common.loading') : permission.canAskAgain ? t('home.buttonReRequestPermission') : t('home.buttonOpenSettings')}
           </Text>
         </Pressable>
       </SafeAreaView>
@@ -332,25 +334,25 @@ export default function ClassifyScreen() {
     return (
       <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={[styles.center, { backgroundColor: bg }]}>
         {session.boot !== 'choice' || !p ? (
-          <Text style={{ color: muted }}>載入整理進度…</Text>
+          <Text style={{ color: muted }}>{t('home.loadingProgress')}</Text>
         ) : (
           <View style={[styles.resumeCard, { borderColor: border }]}>
-            <Text style={[styles.title, { color: text }]}>上次整理到一半</Text>
+            <Text style={[styles.title, { color: text }]}>{t('home.resumeTitle')}</Text>
             <Text style={[styles.desc, { color: muted }]}>
-              {p.sourceTitle} · 已分 {p.processed} 張 · 待刪 {p.trash} 張
+              {t('home.resumeStats', { source: p.sourceTitle, done: p.processed, trash: p.trash })}
             </Text>
             <Pressable
               style={[styles.resumePrimary, { backgroundColor: text }]}
               onPress={() => void session.chooseResume()}>
-              <Text style={{ color: bg, fontWeight: '700' }}>繼續上次</Text>
+              <Text style={{ color: bg, fontWeight: '700' }}>{t('home.resumeButton')}</Text>
             </Pressable>
             <Pressable
               style={[styles.resumeGhost, { borderColor: border }]}
               onPress={() => void session.chooseFresh()}>
-              <Text style={{ color: muted }}>重新開始</Text>
+              <Text style={{ color: muted }}>{t('home.restartButton')}</Text>
             </Pressable>
             <Text style={[styles.resumeNote, { color: muted }]}>
-              重新開始會捨棄上次的未套用紀錄（尚未寫入系統相簿，不影響照片本身）
+              {t('home.restartWarning')}
             </Text>
           </View>
         )}
@@ -375,12 +377,12 @@ export default function ClassifyScreen() {
           <Pressable
             onPress={() => router.push('/settings')}
             hitSlop={8}
-            accessibilityLabel="設定"
+            accessibilityLabel={t('home.accessibilitySettings')}
             style={[styles.iconBtn, { borderColor: border }]}>
             <GearIcon size={19} color={muted} />
           </Pressable>
           <Pressable onPress={handleFinish} style={[styles.finishBtn, { borderColor: text }]}>
-            <Text style={{ color: text, fontWeight: '700', fontSize: 13 }}>結束</Text>
+            <Text style={{ color: text, fontWeight: '700', fontSize: 13 }}>{t('home.finishButton')}</Text>
           </Pressable>
         </View>
       </View>
@@ -396,7 +398,7 @@ export default function ClassifyScreen() {
           onPress={toggleSort}
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel={`切換排序，目前依${session.sortOrder === 'newest' ? '最新' : '最舊'}優先`}
+          accessibilityLabel={t('home.accessibilitySortToggle', { order: session.sortOrder === 'newest' ? t('home.sortNewestShort') : t('home.sortOldestShort') })}
           style={[
             styles.sortPill,
             showSortLabel ? styles.sortPillWithLabel : styles.sortPillIconOnly,
@@ -405,7 +407,7 @@ export default function ClassifyScreen() {
           <SortIcon size={18} color={muted} />
           {showSortLabel ? (
             <Text style={[styles.sortLabel, { color: muted }]}>
-              {session.sortOrder === 'newest' ? '最新優先' : '最舊優先'}
+              {session.sortOrder === 'newest' ? t('home.labelSortNewest') : t('home.labelSortOldest')}
             </Text>
           ) : null}
         </Pressable>
@@ -414,17 +416,17 @@ export default function ClassifyScreen() {
       {session.limitedAccess ? (
         <View style={[styles.limitedBanner, { borderColor: border }]}>
           <Text style={[styles.limitedText, { color: muted, flex: 1 }]}>
-            你只授權了部分照片，目前僅能整理已授權內容。
+            {t('home.partialAccessHint')}
           </Text>
           <Pressable
             onPress={() => void handleManagePhotoAccess()}
             disabled={permissionActionBusy}
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel="更改允許存取的照片"
+            accessibilityLabel={t('home.accessibilityPermissionChange')}
             style={permissionActionBusy && styles.permissionBtnDisabled}>
             <Text style={[styles.limitedManage, { color: text }]}>
-              {permissionActionBusy ? '處理中…' : '更改照片權限'}
+              {permissionActionBusy ? t('common.loading') : t('home.buttonChangePermission')}
             </Text>
           </Pressable>
         </View>
@@ -436,7 +438,7 @@ export default function ClassifyScreen() {
       {/* 中央照片（手勢卡）：重建待處理列（換來源/排序）時顯示載入中，避免殘留舊排序照片造成錯覺 */}
       <View style={[styles.photoArea, dropMode && { zIndex: 10, elevation: 10 }]} pointerEvents="box-none">
         {session.reloading || (session.loading && session.queue.length === 0) ? (
-          <Text style={{ color: muted }}>讀取照片中…</Text>
+          <Text style={{ color: muted }}>{t('home.loadingPhotos')}</Text>
         ) : (
           <ClassifyPhoto
             key={session.current?.assetId ?? 'empty'}
@@ -484,7 +486,7 @@ export default function ClassifyScreen() {
             style={[styles.dockBtn, !session.canUndo && styles.dockBtnDisabled]}>
             <UndoIcon size={16} color={session.canUndo ? text : muted} />
             <Text numberOfLines={1} style={[styles.dockText, { color: session.canUndo ? text : muted }]}>
-              撤銷
+              {t('home.undo')}
             </Text>
           </Pressable>
           <View style={[styles.dockDivider, { backgroundColor: border }]} />
@@ -492,18 +494,18 @@ export default function ClassifyScreen() {
             onPress={() => void handleInspect()}
             disabled={!currentItem}
             hitSlop={8}
-            accessibilityLabel="查看所在相簿"
+            accessibilityLabel={t('home.accessibilityViewAlbum')}
             style={[styles.dockBtn, !currentItem && styles.dockBtnDisabled]}>
             <InfoIcon size={16} color={currentItem ? text : muted} />
             <Text numberOfLines={1} style={[styles.dockText, { color: currentItem ? text : muted }]}>
-              查看
+              {t('home.inspect')}
             </Text>
           </Pressable>
           <View style={[styles.dockDivider, { backgroundColor: border }]} />
           <Link href="/review" asChild>
             <Pressable style={styles.dockBtn} hitSlop={8}>
               <Text numberOfLines={1} style={[styles.dockText, { color: text }]}>
-                結果
+                {t('home.results')}
               </Text>
               <View style={[styles.dockBadge, { backgroundColor: session.processedCount > 0 ? text : border }]}>
                 <Text style={[styles.dockBadgeText, { color: session.processedCount > 0 ? bg : muted }]}>
@@ -546,9 +548,9 @@ export default function ClassifyScreen() {
 
       <ConfirmDialog
         visible={emptyFinishVisible}
-        title="尚無分類操作"
-        message="先滑動分類至少一張照片，才能進入檢查。"
-        confirmText="知道了"
+        title={t('home.dialogNoActionsTitle')}
+        message={t('home.dialogNoActionsMessage')}
+        confirmText={t('home.dialogNoActionsConfirm')}
         onConfirm={() => setEmptyFinishVisible(false)}
         onCancel={() => setEmptyFinishVisible(false)}
       />
@@ -560,12 +562,12 @@ export default function ClassifyScreen() {
             style={[styles.sheet, { backgroundColor: bg, borderColor: border, paddingBottom: insets.bottom + 16 }]}
             onPress={() => {}}>
             <View style={styles.sheetHandle} />
-            <Text style={[styles.sheetTitle, { color: text }]}>這張在哪些相簿</Text>
-            <Text style={[styles.sheetSub, { color: muted }]}>只供查看，不會分類或移動相片與影片</Text>
+            <Text style={[styles.sheetTitle, { color: text }]}>{t('home.whichAlbums')}</Text>
+            <Text style={[styles.sheetSub, { color: muted }]}>{t('home.inspectHint')}</Text>
             {inspectLoading ? (
-              <Text style={[styles.sheetEmpty, { color: muted }]}>讀取中…</Text>
+              <Text style={[styles.sheetEmpty, { color: muted }]}>{t('common.reading')}</Text>
             ) : inspectAlbums.length === 0 ? (
-              <Text style={[styles.sheetEmpty, { color: muted }]}>查不到所屬相簿（可能在「所有相片與影片」或系統未回報）。</Text>
+              <Text style={[styles.sheetEmpty, { color: muted }]}>{t('home.noAlbumInfo')}</Text>
             ) : (
               <ScrollView style={{ maxHeight: 320 }}>
                 {inspectAlbums.map((name) => (
@@ -576,7 +578,7 @@ export default function ClassifyScreen() {
               </ScrollView>
             )}
             <Pressable style={[styles.sheetDone, { backgroundColor: text }]} onPress={() => setInspectVisible(false)}>
-              <Text style={[styles.sheetDoneText, { color: bg }]}>關閉</Text>
+              <Text style={[styles.sheetDoneText, { color: bg }]}>{t('common.close')}</Text>
             </Pressable>
           </Pressable>
         </Pressable>

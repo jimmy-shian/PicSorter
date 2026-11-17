@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/theme';
+import { useTranslation } from '@/hooks/useTranslation';
 import { listSourceAlbums } from '@/lib/media';
 import type { SourceAlbum } from '@/types';
 
@@ -14,6 +15,7 @@ interface Props {
 
 export function SourceAlbumPicker({ visible, current, onSelect, onClose }: Props) {
   const { bg, text, muted, border, card } = useTheme();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [keyword, setKeyword] = useState('');
   const [albums, setAlbums] = useState<SourceAlbum[]>([]);
@@ -28,7 +30,7 @@ export function SourceAlbumPicker({ visible, current, onSelect, onClose }: Props
         const res = await listSourceAlbums();
         if (active) setAlbums(res);
       } catch {
-        if (active) setAlbums([{ id: null, title: '所有相片與影片' }]);
+        if (active) setAlbums([{ id: null, title: t('sourceAlbumPicker.allPhotos') }]);
       } finally {
         if (active) setLoading(false);
       }
@@ -62,17 +64,17 @@ export function SourceAlbumPicker({ visible, current, onSelect, onClose }: Props
           onPress={() => {}}>
           <View style={styles.handle} />
           <View style={styles.headerRow}>
-            <Text style={[styles.title, { color: text }]}>選擇來源相簿</Text>
-            <Text style={[styles.countText, { color: muted }]}>共 {albums.length} 個相簿</Text>
+            <Text style={[styles.title, { color: text }]}>{t('sourceAlbumPicker.title')}</Text>
+            <Text style={[styles.countText, { color: muted }]}>{t('sourceAlbumPicker.albumCount', { count: albums.length })}</Text>
           </View>
           <Text style={[styles.sub, { color: muted }]}>
-            點選切換要整理的照片與影片來源（包含 DCIM 與各相簿資料夾）
+            {t('sourceAlbumPicker.description')}
           </Text>
 
           {albums.length > 6 ? (
             <TextInput
               style={[styles.searchInput, { borderColor: border, color: text, backgroundColor: card }]}
-              placeholder="搜尋相簿名稱…"
+              placeholder={t('sourceAlbumPicker.placeholder')}
               placeholderTextColor={muted}
               value={keyword}
               onChangeText={setKeyword}
@@ -81,7 +83,7 @@ export function SourceAlbumPicker({ visible, current, onSelect, onClose }: Props
           ) : null}
 
           {loading ? (
-            <Text style={{ color: muted, paddingVertical: 20, textAlign: 'center' }}>讀取相簿中…</Text>
+            <Text style={{ color: muted, paddingVertical: 20, textAlign: 'center' }}>{t('sourceAlbumPicker.loading')}</Text>
           ) : (
             <FlatList
               data={filtered}
@@ -101,14 +103,14 @@ export function SourceAlbumPicker({ visible, current, onSelect, onClose }: Props
               }}
               ListEmptyComponent={
                 <Text style={{ color: muted, paddingVertical: 20, textAlign: 'center' }}>
-                  找不到符合「{keyword}」的相簿
+                  {t('gestureAlbumSheet.emptySearch', { keyword })}
                 </Text>
               }
             />
           )}
           <View style={{ height: 8 }} />
           <Pressable style={[styles.closeBtn, { borderColor: border }]} onPress={handleClose}>
-            <Text style={{ color: muted }}>關閉</Text>
+            <Text style={{ color: muted }}>{t('common.close')}</Text>
           </Pressable>
         </Pressable>
         </KeyboardAvoidingView>

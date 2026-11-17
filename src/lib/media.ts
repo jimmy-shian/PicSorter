@@ -9,6 +9,7 @@ import {
   type PermissionResponse,
 } from 'expo-media-library';
 import { getAssetsAsync as getLegacyAssetsAsync, MediaType as LegacyMediaType } from 'expo-media-library/legacy';
+import i18n from '@/i18n';
 import type { ClassifyItem, SortOrder, SourceAlbum, TargetAlbum } from '@/types';
 
 /**
@@ -119,7 +120,7 @@ export async function listSourceAlbums(_showAll?: boolean): Promise<SourceAlbum[
     }),
   );
   // 「所有相片與影片」放在首位，代表全機與 DCIM 內全部相片與影片
-  const out: SourceAlbum[] = [{ id: null, title: '所有相片與影片' }];
+  const out: SourceAlbum[] = [{ id: null, title: i18n.t('session.defaultSource') }];
   const candidates = (withTitles.filter((x) => x !== null) as { album: Album; title: string }[]).filter(
     ({ title }) => {
       const trimmed = title.trim();

@@ -6,6 +6,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import * as Application from 'expo-application';
 import { useTheme } from '@/lib/theme';
 import { useSession } from '@/lib/session-context';
+import { useTranslation } from '@/hooks/useTranslation';
 import { GestureAlbumSheet } from '@/components/GestureAlbumSheet';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
@@ -17,18 +18,18 @@ import {
 import type { GestureAction, GestureDirection, MoveConfirmMode, ThemeMode } from '@/types';
 
 const GESTURE_DIRS: { dir: GestureDirection; label: string; icon: string }[] = [
-  { dir: 'up', label: '向上滑動', icon: '↑' },
-  { dir: 'down', label: '向下滑動', icon: '↓' },
-  { dir: 'left', label: '向左滑動', icon: '←' },
-  { dir: 'right', label: '向右滑動', icon: '→' },
+  { dir: 'up', label: 'settings.gesture.up', icon: '↑' },
+  { dir: 'down', label: 'settings.gesture.down', icon: '↓' },
+  { dir: 'left', label: 'settings.gesture.left', icon: '←' },
+  { dir: 'right', label: 'settings.gesture.right', icon: '→' },
 ];
 
 const GESTURE_ACTIONS: { action: GestureAction; label: string; desc: string }[] = [
-  { action: 'album', label: '上滑目標相簿', desc: '放入「分類手勢」設定的上滑目標' },
-  { action: 'trash', label: '標記待刪除', desc: '標記移入垃圾桶' },
-  { action: 'skip', label: '略過此張', desc: '不作處理，前進下一張' },
-  { action: 'inspect', label: '下滑目標相簿', desc: '放入「分類手勢」設定的下滑目標' },
-  { action: 'none', label: '無動作 (關閉)', desc: '滑動不執行動作，彈回' },
+  { action: 'album', label: 'settings.gesture.actionAlbum', desc: 'settings.gesture.actionAlbumDesc' },
+  { action: 'trash', label: 'settings.gesture.actionTrash', desc: 'settings.gesture.actionTrashDesc' },
+  { action: 'skip', label: 'settings.gesture.actionSkip', desc: 'settings.gesture.actionSkipDesc' },
+  { action: 'inspect', label: 'settings.gesture.actionInspect', desc: 'settings.gesture.actionInspectDesc' },
+  { action: 'none', label: 'settings.gesture.actionNone', desc: 'settings.gesture.actionNoneDesc' },
 ];
 
 function actionLabel(act: GestureAction): string {
@@ -36,9 +37,9 @@ function actionLabel(act: GestureAction): string {
 }
 
 const MODES: { id: ThemeMode; label: string }[] = [
-  { id: 'light', label: '淺色' },
-  { id: 'dark', label: '深色' },
-  { id: 'system', label: '跟隨系統' },
+  { id: 'light', label: 'settings.theme.light' },
+  { id: 'dark', label: 'settings.theme.dark' },
+  { id: 'system', label: 'settings.theme.system' },
 ];
 
 function formatDate(ms: number): string {
@@ -52,6 +53,7 @@ function formatDate(ms: number): string {
 /** 基礎設定（規格 §4.4）：只保留必要項目 + 整理進度管理 */
 export default function SettingsScreen() {
   const { bg, text, muted, border, card, danger, mode, setMode } = useTheme();
+  const { t } = useTranslation();
   const session = useSession();
   const db = useSQLiteContext();
   const [records, setRecords] = useState<OpenSessionInfo[]>([]);
@@ -154,33 +156,33 @@ export default function SettingsScreen() {
     // 有原生 header，已處理頂部安全區；這裡只避開左右+底部導覽列（圖1底部被遮住問題）
     <SafeAreaView edges={['left', 'right', 'bottom']} style={[styles.root, { backgroundColor: bg }]}>
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        <Text style={[styles.label, { color: muted }]}>外觀</Text>
+        <Text style={[styles.label, { color: muted }]}>{t('settings.appearanceSection')}</Text>
         <View style={[styles.card, { borderColor: border, backgroundColor: card }]}>
           {MODES.map((m) => (
             <Pressable key={m.id} onPress={() => setMode(m.id)} style={styles.row}>
-              <Text style={[styles.rowText, { color: text }]}>{m.label}</Text>
+              <Text style={[styles.rowText, { color: text }]}>{t(m.label)}</Text>
               {mode === m.id ? <Text style={{ color: muted }}>✓</Text> : null}
             </Pressable>
           ))}
         </View>
 
-        <Text style={[styles.label, { color: muted }]}>照片排序</Text>
+        <Text style={[styles.label, { color: muted }]}>{t('settings.photoSortTitle')}</Text>
         <View style={[styles.card, { borderColor: border, backgroundColor: card }]}>
           <Pressable onPress={() => session.setSortOrder('newest')} style={styles.row}>
-            <Text style={[styles.rowText, { color: text }]}>最新至最舊</Text>
+            <Text style={[styles.rowText, { color: text }]}>{t('settings.sortNewestToOldest')}</Text>
             {session.sortOrder === 'newest' ? <Text style={{ color: muted }}>✓</Text> : null}
           </Pressable>
           <Pressable onPress={() => session.setSortOrder('oldest')} style={styles.row}>
-            <Text style={[styles.rowText, { color: text }]}>最舊至最新</Text>
+            <Text style={[styles.rowText, { color: text }]}>{t('settings.sortOldestToNewest')}</Text>
             {session.sortOrder === 'oldest' ? <Text style={{ color: muted }}>✓</Text> : null}
           </Pressable>
         </View>
 
         {/* ── 手勢方向自訂 ── */}
-        <Text style={[styles.label, { color: muted }]}>手勢方向設定</Text>
+        <Text style={[styles.label, { color: muted }]}>{t('settings.gestureSectionTitle')}</Text>
         <View style={[styles.card, { borderColor: border, backgroundColor: card }]}>
           <Pressable accessibilityRole="button" onPress={() => setGestureTargetsVisible(true)} style={styles.row}>
-            <Text style={[styles.rowText, { color: text }]}>分類相簿</Text>
+            <Text style={[styles.rowText, { color: text }]}>{t('settings.classifyAlbumSection')}</Text>
             <Text style={{ color: muted }}>›</Text>
           </Pressable>
           {GESTURE_DIRS.map((g) => {
@@ -189,27 +191,27 @@ export default function SettingsScreen() {
               <Pressable key={g.dir} onPress={() => setPickingDir(g.dir)} style={styles.row}>
                 <View style={styles.gestureRowLeft}>
                   <Text style={[styles.gestureIcon, { color: muted }]}>{g.icon}</Text>
-                  <Text style={[styles.rowText, { color: text }]}>{g.label}</Text>
+                  <Text style={[styles.rowText, { color: text }]}>{t(g.label)}</Text>
                 </View>
-                <Text style={[styles.gestureAction, { color: muted }]}>{actionLabel(currentAction)} ›</Text>
+                <Text style={[styles.gestureAction, { color: muted }]}>{t(actionLabel(currentAction))} ›</Text>
               </Pressable>
             );
           })}
         </View>
         <Text style={[styles.gestureHint, { color: muted }]}>
-          點選方向更換動作；⇄ 表示交換兩個方向的動作
+          {t('settings.gestureHint')}
         </Text>
 
-        <Text style={[styles.label, { color: muted }]}>移動確認</Text>
+        <Text style={[styles.label, { color: muted }]}>{t('settings.moveConfirmTitle')}</Text>
         <View style={[styles.card, { borderColor: border, backgroundColor: card }]}>
           {([
-            ['once', '全部一次確認', '同意後一次套用所有相簿移動'],
-            ['each', '每個相簿詢問', '每個相簿移動前都確認'],
+            ['once', 'settings.confirmMode.once', 'settings.confirmMode.onceDesc'],
+            ['each', 'settings.confirmMode.each', 'settings.confirmMode.eachDesc'],
           ] as [MoveConfirmMode, string, string][]).map(([modeId, label, desc]) => (
             <Pressable key={modeId} onPress={() => void session.updateMoveConfirmMode(modeId)} style={styles.row}>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.rowText, { color: text }]}>{label}</Text>
-                <Text style={[styles.switchDesc, { color: muted }]}>{desc}</Text>
+                <Text style={[styles.rowText, { color: text }]}>{t(label)}</Text>
+                <Text style={[styles.switchDesc, { color: muted }]}>{t(desc)}</Text>
               </View>
               {session.moveConfirmMode === modeId ? <Text style={{ color: muted }}>✓</Text> : null}
             </Pressable>
@@ -217,17 +219,17 @@ export default function SettingsScreen() {
         </View>
 
 
-        <Text style={[styles.label, { color: muted }]}>垃圾桶</Text>
+        <Text style={[styles.label, { color: muted }]}>{t('common.trash')}</Text>
         <View style={[styles.card, { borderColor: border, backgroundColor: card }]}>
           <View style={styles.row}>
-            <Text style={[styles.rowText, { color: text, flex: 1, paddingRight: 12 }]}>移入垃圾桶時不再詢問</Text>
-            <Switch accessibilityLabel="移入垃圾桶時不再詢問" value={!session.confirmBeforeTrash}
+            <Text style={[styles.rowText, { color: text, flex: 1, paddingRight: 12 }]}>{t('settings.switchConfirmBeforeTrash')}</Text>
+            <Switch accessibilityLabel={t('settings.switchConfirmBeforeTrash')} value={!session.confirmBeforeTrash}
               onValueChange={(value) => { void session.updateConfirmBeforeTrash(!value).catch(() => setPreferenceError(true)); }} />
           </View>
         </View>
 
         {/* ── 操作教學 ── */}
-        <Text style={[styles.label, { color: muted }]}>操作教學</Text>
+        <Text style={[styles.label, { color: muted }]}>{t('settings.tutorialTitle')}</Text>
         <View style={[styles.card, { borderColor: border, backgroundColor: card }]}>
           <Pressable
             onPress={() => {
@@ -235,15 +237,15 @@ export default function SettingsScreen() {
               router.back();
             }}
             style={styles.row}>
-            <Text style={[styles.rowText, { color: text }]}>重看新手教學</Text>
+            <Text style={[styles.rowText, { color: text }]}>{t('settings.retakeTutorial')}</Text>
             <Text style={{ color: muted }}>›</Text>
           </Pressable>
         </View>
 
-        <Text style={[styles.label, { color: muted }]}>整理進度管理</Text>
+        <Text style={[styles.label, { color: muted }]}>{t('settings.progressSection')}</Text>
         <View style={[styles.card, { borderColor: border, backgroundColor: card }]}>
           {records.length === 0 ? (
-            <Text style={[styles.emptyText, { color: muted }]}>目前沒有未完成的整理</Text>
+            <Text style={[styles.emptyText, { color: muted }]}>{t('settings.noActiveProgress')}</Text>
           ) : (
             records.map((r) => {
               const isCurrent = r.id === session.sessionId;
@@ -257,7 +259,7 @@ export default function SettingsScreen() {
                       </Text>
                       {isCurrent ? (
                         <View style={[styles.currentBadge, { borderColor: border }]}>
-                          <Text style={[styles.currentBadgeText, { color: muted }]}>目前</Text>
+                          <Text style={[styles.currentBadgeText, { color: muted }]}>{t('common.current')}</Text>
                         </View>
                       ) : null}
                     </View>
@@ -266,19 +268,19 @@ export default function SettingsScreen() {
                     </Text>
                     {/* 原位置改放總張數語意：共幾張＋待刪幾張，單行省略 */}
                     <Text style={[styles.recordSub, { color: muted }]} numberOfLines={1}>
-                      共 {r.decision_count} 張 · 待刪 {r.trash_count} 張
+                      {t('settings.progressStats', { total: r.decision_count, trash: r.trash_count })}
                     </Text>
                   </View>
                   <View style={styles.recordActions}>
                     <Pressable
                       onPress={() => void handleResume(r.id)}
                       style={[styles.miniBtn, { borderColor: text, backgroundColor: card }]}>
-                      <Text style={[styles.miniBtnText, { color: text }]}>繼續</Text>
+                      <Text style={[styles.miniBtnText, { color: text }]}>{t('settings.resumeShort')}</Text>
                     </Pressable>
                     <Pressable
                       onPress={() => handleDiscard(r)}
                       style={[styles.miniBtn, { borderColor: border }]}>
-                      <Text style={[styles.miniBtnText, { color: muted }]}>捨棄</Text>
+                      <Text style={[styles.miniBtnText, { color: muted }]}>{t('common.discard')}</Text>
                     </Pressable>
                   </View>
                 </View>
@@ -287,19 +289,19 @@ export default function SettingsScreen() {
           )}
         </View>
         <Pressable onPress={handleClearAll} style={styles.clearRow}>
-          <Text style={[styles.clearText, { color: danger }]}>清除所有整理紀錄</Text>
+          <Text style={[styles.clearText, { color: danger }]}>{t('settings.clearAllHistoryLink')}</Text>
         </Pressable>
 
         <View style={styles.aboutCard}>
           <Text style={[styles.aboutAppName, { color: text }]}>
-            揀影 PicSorter
+            {t('settings.brandName')}
           </Text>
           <Text style={[styles.aboutVersion, { color: muted }]}>
-            版本 {Application.nativeApplicationVersion || '1.0.2'}
+            {t('settings.versionLine', { version: Application.nativeApplicationVersion || '1.0.2' })}
           </Text>
           <View style={[styles.aboutDivider, { backgroundColor: border }]} />
           <Text style={[styles.aboutPrivacy, { color: muted }]}>
-            純本機離線整理，照片不上傳、不佔用額外空間。
+            {t('settings.privacyLine')}
           </Text>
           <Text style={[styles.aboutCopyright, { color: muted }]}>
             © 2026 PicSorter. All{'\u00A0'}rights{'\u00A0'}reserved.
@@ -315,7 +317,7 @@ export default function SettingsScreen() {
         <Pressable style={styles.pickerBackdrop} onPress={() => setPickingDir(null)}>
           <Pressable style={[styles.pickerCard, { backgroundColor: bg, borderColor: border }]} onPress={() => {}}>
             <Text style={[styles.pickerTitle, { color: text }]}>
-              {pickingDir ? GESTURE_DIRS.find((g) => g.dir === pickingDir)?.label : ''}：選擇動作
+              {pickingDir ? t(GESTURE_DIRS.find((g) => g.dir === pickingDir)?.label ?? '') : ''}{t('settings.pickerSuffix')}
             </Text>
             <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ gap: 10 }}>
               {GESTURE_ACTIONS.map((a) => {
@@ -340,12 +342,17 @@ export default function SettingsScreen() {
                       { borderColor: border, backgroundColor: isActive ? card : 'transparent' },
                     ]}>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.rowText, { color: text }]}>{a.label}</Text>
+                      <Text style={[styles.rowText, { color: text }]}>{t(a.label)}</Text>
                       <Text style={[styles.pickerDesc, { color: muted }]}>
-                        {a.desc}
+                        {t(a.desc)}
                       </Text>
                     </View>
-                    {occupiedDirection && <View accessibilityLabel={`選取後，${GESTURE_DIRS.find((g) => g.dir === pickingDir)?.label}改為${a.label}，${occupiedDirection.label}改為${pickingDir ? actionLabel(session.gestureSettings[pickingDir]) : ''}`} style={[styles.swapBadge, { borderColor: border }]}>
+                    {occupiedDirection && <View accessibilityLabel={t('settings.accessibilitySwapBadge', {
+                      pickingDirLabel: pickingDir ? t(GESTURE_DIRS.find((g) => g.dir === pickingDir)?.label ?? '') : '',
+                      newLabel: t(a.label),
+                      occupiedDirLabel: t(occupiedDirection.label),
+                      oldLabel: pickingDir ? t(actionLabel(session.gestureSettings[pickingDir])) : '',
+                    })} style={[styles.swapBadge, { borderColor: border }]}>
                       <Text style={{ color: muted, fontSize: 15 }}>{GESTURE_DIRS.find((g) => g.dir === pickingDir)?.icon} ⇄ {occupiedDirection.icon}</Text>
                     </View>}
                     {isActive ? <Text style={{ color: muted, fontSize: 16 }}>✓</Text> : null}
@@ -359,13 +366,13 @@ export default function SettingsScreen() {
 
       <ConfirmDialog
         visible={discardTarget !== null}
-        title="捨棄這筆進度？"
+        title={t('settings.dialogDiscardProgressTitle')}
         message={
           discardTarget
-            ? `${discardTarget.source_album_title} · 已分 ${discardTarget.decision_count} 張`
+            ? t('settings.discardMessage', { title: discardTarget.source_album_title, done: discardTarget.decision_count })
             : undefined
         }
-        confirmText="捨棄"
+        confirmText={t('settings.dialogDiscardProgressConfirm')}
         destructive
         busy={busy}
         onConfirm={() => void confirmDiscard()}
@@ -373,21 +380,21 @@ export default function SettingsScreen() {
       />
       <ConfirmDialog
         visible={clearAllVisible}
-        title="清除所有整理紀錄？"
-        message="未套用的分類決定將一併清除（照片本身不受影響）。"
-        confirmText="全部清除"
+        title={t('settings.dialogClearHistoryTitle')}
+        message={t('settings.dialogClearHistoryMessage')}
+        confirmText={t('settings.dialogClearHistoryConfirm')}
         destructive
         busy={busy}
         onConfirm={() => void confirmClearAll()}
         onCancel={() => setClearAllVisible(false)}
       />
-      <ConfirmDialog visible={preferenceError} title="設定未儲存" message="請稍後再試。" confirmText="知道了"
+      <ConfirmDialog visible={preferenceError} title={t('settings.dialogPrefErrorTitle')} message={t('settings.dialogPrefErrorMessage')} confirmText={t('settings.dialogPrefErrorConfirm')}
         onConfirm={() => setPreferenceError(false)} onCancel={() => setPreferenceError(false)} />
       <ConfirmDialog
         visible={resumeFailed}
-        title="找不到該筆進度"
-        message="可能已被清除，請重新整理。"
-        confirmText="知道了"
+        title={t('settings.dialogProgressNotFoundTitle')}
+        message={t('settings.dialogProgressNotFoundMessage')}
+        confirmText={t('settings.dialogProgressNotFoundConfirm')}
         onConfirm={() => setResumeFailed(false)}
         onCancel={() => setResumeFailed(false)}
       />

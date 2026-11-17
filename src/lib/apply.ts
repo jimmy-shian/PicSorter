@@ -1,5 +1,6 @@
 import type * as SQLite from 'expo-sqlite';
 import { Album } from 'expo-media-library';
+import i18n from '@/i18n';
 import { applyAddToAlbum } from '@/lib/media';
 import { moveAssetsToTrash, permanentlyDeleteAssets } from '@/lib/trash';
 import { finishSession } from '@/lib/db';
@@ -77,10 +78,10 @@ export function classifyApplyError(e: unknown): { kind: 'cancelled' | 'missing' 
   const code = (e as { code?: unknown })?.code;
   const hay = `${String(code ?? '')} ${msg}`;
   if (/didn't grant|did not grant|E_NO_PERMISSIONS|FailedToGrantPermissions|cancelled|canceled|ERR_TRASH.*CANCEL/i.test(hay)) {
-    return { kind: 'cancelled', message: '使用者未確認' };
+    return { kind: 'cancelled', message: i18n.t('applyLib.reasonUnconfirmed') };
   }
   if (/not found|does not exist|may have been deleted|AlbumNotFound|AssetNotFound|CouldNotBeAdded/i.test(hay)) {
-    return { kind: 'missing', message: '相簿或照片已不存在' };
+    return { kind: 'missing', message: i18n.t('applyLib.reasonAssetMissing') };
   }
   return { kind: 'failed', message: msg.length > 120 ? `${msg.slice(0, 120)}…` : msg };
 }
@@ -182,7 +183,7 @@ export async function runApplyPipeline(
     const id = r.target_album_id as string;
     const isVirtual = id.startsWith('virtual:');
     if (!isVirtual && liveAlbums.size > 0 && !liveAlbums.has(id)) {
-      await markFailed(db, sessionId, [r.asset_id], '目標相簿已不存在');
+      await markFailed(db, sessionId, [r.asset_id], i18n.t('applyLib.reasonTargetAlbumMissing'));
       done += 1;
       report(done, total, 'verify', r.target_album_title);
       continue;
@@ -280,7 +281,7 @@ export async function runApplyPipeline(
         const err = e as Error & { code?: string };
         if (err?.code === 'ERR_TRASH_UNSUPPORTED') {
           // 閘門不應放行舊機；萬一發生，保守記失敗並寫明，不擅自永久刪除
-          await markFailed(db, sessionId, ids, '此系統不支援垃圾桶，請更新系統後重試');
+          await markFailed(db, sessionId, ids, i18n.t('applyLib.errorTrashUnsupported'));
         } else {
           const c = classifyApplyError(e);
           if (c.kind !== 'cancelled') {

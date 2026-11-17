@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/theme';
+import { useTranslation } from '@/hooks/useTranslation';
 import type { TargetAlbum } from '@/types';
 import { AlbumSearch } from './AlbumSearch';
 
@@ -16,6 +17,7 @@ interface Props {
 /** 檢查頁用：把選中的照片改放至其他目標相簿 */
 export function TargetAlbumSheet({ visible, title, targets, onPick, onClose }: Props) {
   const { bg, text, muted, border, card } = useTheme();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [keyword, setKeyword] = useState('');
   const handleClose = () => { setKeyword(''); onClose(); };
@@ -31,12 +33,12 @@ export function TargetAlbumSheet({ visible, title, targets, onPick, onClose }: P
           <Text style={[styles.title, { color: text }]}>{title}</Text>
           <AlbumSearch value={keyword} onChange={setKeyword} />
           {targets.length === 0 ? (
-            <Text style={[styles.empty, { color: muted }]}>沒有可用的目標相簿</Text>
+            <Text style={[styles.empty, { color: muted }]}>{t('targetAlbumSheet.empty')}</Text>
           ) : (
             <FlatList
               data={filtered}
               keyboardShouldPersistTaps="handled"
-              ListEmptyComponent={<Text style={[styles.empty, { color: muted }]}>找不到符合的相簿</Text>}
+              ListEmptyComponent={<Text style={[styles.empty, { color: muted }]}>{t('albumManager.emptySearch')}</Text>}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <Pressable
@@ -51,7 +53,7 @@ export function TargetAlbumSheet({ visible, title, targets, onPick, onClose }: P
             />
           )}
           <Pressable style={[styles.closeBtn, { borderColor: border }]} onPress={handleClose}>
-            <Text style={{ color: muted }}>取消</Text>
+            <Text style={{ color: muted }}>{t('common.cancel')}</Text>
           </Pressable>
         </Pressable>
         </KeyboardAvoidingView>

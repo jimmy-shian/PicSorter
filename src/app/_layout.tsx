@@ -11,10 +11,15 @@ import { StyleSheet } from 'react-native';
 import { migrateDbIfNeeded, DATABASE_NAME } from '@/lib/db';
 import { SessionProvider } from '@/lib/session-context';
 import { ThemeProvider, useTheme } from '@/lib/theme';
+import { useTranslation } from '@/hooks/useTranslation';
+
+// Initialize i18n early
+import '@/i18n';
 
 function ThemedStack() {
   const [showSplash, setShowSplash] = useState(true);
   const { dark, bg, text } = useTheme();
+  const { t } = useTranslation();
 
   // 深淺色跟著 App 主題走：狀態列圖示 + 底部導覽列按鈕 + 根視圖底色同步，
   // 避免圖1那種「內容深色、系統列卻白色」的斷層。
@@ -42,10 +47,10 @@ function ThemedStack() {
           headerShadowVisible: false,
         }}>
         <Stack.Screen name="index" />
-        <Stack.Screen name="review" options={{ presentation: 'card', headerShown: true, title: '檢查結果' }} />
+        <Stack.Screen name="review" options={{ presentation: 'card', headerShown: true, title: t('navigation.review') }} />
         <Stack.Screen name="review-detail" options={{ presentation: 'card', headerShown: false }} />
-        <Stack.Screen name="apply" options={{ presentation: 'card', headerShown: true, title: '套用變更' }} />
-        <Stack.Screen name="settings" options={{ presentation: 'card', headerShown: true, title: '設定' }} />
+        <Stack.Screen name="apply" options={{ presentation: 'card', headerShown: true, title: t('navigation.apply') }} />
+        <Stack.Screen name="settings" options={{ presentation: 'card', headerShown: true, title: t('navigation.settings') }} />
       </Stack>
       <SplashAdModal visible={showSplash} onClose={() => setShowSplash(false)} />
     </>

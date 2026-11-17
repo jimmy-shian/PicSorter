@@ -1,5 +1,6 @@
 import { useAdBypass } from '../lib/ad-bypass';
 import { useTheme } from '../lib/theme';
+import { useTranslation } from '@/hooks/useTranslation';
 import { ArrowCircle } from './GestureIcons';
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Modal, Pressable, Image } from 'react-native';
@@ -38,6 +39,7 @@ const BACKDOOR_CLICKS = 5;
 export function SplashAdModal({ visible, onClose }: SplashAdModalProps) {
   const { bypassed, ready, enableBypass } = useAdBypass();
   const { bg, card, text, muted, accent, border } = useTheme();
+  const { t } = useTranslation();
   const [countdown, setCountdown] = useState(AD_DURATION);
   const clickTimestampsRef = useRef<number[]>([]);
 
@@ -105,8 +107,8 @@ export function SplashAdModal({ visible, onClose }: SplashAdModalProps) {
               <View style={[styles.brandMarkDot, { borderColor: accent }]} />
             </View>
             <View style={styles.brandText}>
-              <Text style={[styles.appTitle, { color: text }]}>揀影 PicSorter</Text>
-              <Text style={[styles.appMeta, { color: muted }]}>相簿索引中 · 離線安全</Text>
+              <Text style={[styles.appTitle, { color: text }]}>{t('splashAd.brandTitle')}</Text>
+              <Text style={[styles.appMeta, { color: muted }]}>{t('splashAd.statusLine')}</Text>
             </View>
           </Pressable>
 
@@ -128,7 +130,7 @@ export function SplashAdModal({ visible, onClose }: SplashAdModalProps) {
               {/* Google 政策：必須標示為廣告 */}
               <View style={styles.adBadgeRow}>
                 <View style={styles.adBadge}>
-                  <Text style={styles.adBadgeText}>廣告</Text>
+                  <Text style={styles.adBadgeText}>{t('ad.badge')}</Text>
                 </View>
                 {nativeAd.advertiser ? (
                   <Text numberOfLines={1} style={[styles.advertiser, { color: muted }]}>
@@ -162,7 +164,7 @@ export function SplashAdModal({ visible, onClose }: SplashAdModalProps) {
               <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
                 <View style={[styles.cta, { backgroundColor: accent }]}>
                   <Text numberOfLines={1} style={[styles.ctaText, { color: bg }]}>
-                    {nativeAd.callToAction || '瞭解更多'}
+                    {nativeAd.callToAction || t('ad.ctaDefault')}
                   </Text>
                 </View>
               </NativeAsset>
@@ -172,7 +174,7 @@ export function SplashAdModal({ visible, onClose }: SplashAdModalProps) {
               <View style={[styles.placeholder, { borderColor: border, backgroundColor: card }]}>
                 <View style={[styles.placeholderBar, { backgroundColor: accent }]} />
                 <Text style={[styles.placeholderText, { color: muted }]}>
-                  {status === 'loading' ? '廣告載入中…' : '贊助內容 · 廣告載位'}
+                  {status === 'loading' ? t('ad.loading') : t('ad.label')}
                 </Text>
               </View>
             </View>
@@ -181,23 +183,23 @@ export function SplashAdModal({ visible, onClose }: SplashAdModalProps) {
           {/* 懸浮手勢膠囊提示條（= ClassifyPhoto 的 unifiedTopHint） */}
           <View style={[styles.hintPill, styles.hintUp]} pointerEvents="none">
             <ArrowCircle direction="up" size={18} color="#fff" />
-            <Text numberOfLines={1} style={styles.hintText}>加入目標相簿</Text>
+            <Text numberOfLines={1} style={styles.hintText}>{t('splashAd.addToTarget')}</Text>
           </View>
 
           <View style={[styles.hintPill, styles.hintLeft]} pointerEvents="none">
             <ArrowCircle direction="left" size={18} color="#fff" />
-            <Text numberOfLines={1} style={styles.hintText}>略過</Text>
+            <Text numberOfLines={1} style={styles.hintText}>{t('common.skip')}</Text>
           </View>
 
           <View style={[styles.hintPill, styles.hintTrash]} pointerEvents="none">
-            <Text numberOfLines={1} style={styles.hintText}>捨棄</Text>
+            <Text numberOfLines={1} style={styles.hintText}>{t('common.discard')}</Text>
             <ArrowCircle direction="right" size={18} color="#fff" />
           </View>
         </Pressable>
 
         {/* 底列 */}
         <View style={styles.bottomBar}>
-          <Text style={[styles.bottomNote, { color: muted }]}>直覺手勢整理相簿 · 維護隱私與儲存空間</Text>
+          <Text style={[styles.bottomNote, { color: muted }]}>{t('splashAd.tagline')}</Text>
           <Text style={[styles.studioSignature, { color: muted }]}>yesolve studio</Text>
         </View>
       </View>

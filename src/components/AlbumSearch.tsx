@@ -1,16 +1,18 @@
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useTheme } from '@/lib/theme';
+import { useTranslation } from '@/hooks/useTranslation';
 
 export function AlbumSearch({ value, onChange, disabled = false }: {
   value: string; onChange: (value: string) => void; disabled?: boolean;
 }) {
   const { text, muted, border, card } = useTheme();
+  const { t } = useTranslation();
   return (
     <View style={[styles.search, { borderColor: border, backgroundColor: card }]}>
-      <TextInput accessibilityLabel="搜尋相簿名稱" placeholder="搜尋相簿名稱…" placeholderTextColor={muted}
+      <TextInput accessibilityLabel={t('albumSearch.accessibilityLabel')} placeholder={t('albumSearch.placeholder')} placeholderTextColor={muted}
         value={value} onChangeText={onChange} editable={!disabled} autoCorrect={false} autoCapitalize="none"
         returnKeyType="search" style={[styles.input, { color: text }]} />
-      {!!value && <Pressable disabled={disabled} accessibilityRole="button" accessibilityLabel="清除相簿搜尋"
+      {!!value && <Pressable disabled={disabled} accessibilityRole="button" accessibilityLabel={t('albumSearch.accessibilityClear')}
         onPress={() => onChange('')} style={styles.clear}><Text style={{ color: muted, fontSize: 20 }}>×</Text></Pressable>}
     </View>
   );

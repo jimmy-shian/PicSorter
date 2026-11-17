@@ -1,6 +1,7 @@
 import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { AlbumEntry } from '@/lib/album-order';
 import { useTheme } from '@/lib/theme';
+import { useTranslation } from '@/hooks/useTranslation';
 
 interface Props {
   visible: boolean;
@@ -24,6 +25,7 @@ export function ShortcutSlotModal({
   onClose,
 }: Props) {
   const { bg, card, text, muted, border } = useTheme();
+  const { t } = useTranslation();
 
   if (!entry) return null;
 
@@ -45,12 +47,12 @@ export function ShortcutSlotModal({
     }
 
     Alert.alert(
-      '互換快捷位置？',
-      `快捷 ${index + 1} 目前為「${occupant.title}」，確定要將「${entry.title}」與「${occupant.title}」互換快捷位置嗎？`,
+      t('shortcutSlotModal.title'),
+      t('shortcutSlotModal.message', { entry: entry.title, index: index + 1, occupant: occupant.title }),
       [
-        { text: '取消', style: 'cancel' },
+        { text: t('shortcutSlotModal.cancel'), style: 'cancel' },
         {
-          text: '確定互換',
+          text: t('shortcutSlotModal.confirm'),
           onPress: () => {
             onAssign(index, occupant);
             onClose();
@@ -70,12 +72,12 @@ export function ShortcutSlotModal({
       <View style={styles.backdrop}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <View style={[styles.dialog, { backgroundColor: card, borderColor: border }]}>
-          <Text style={[styles.title, { color: text }]}>設定快捷位置</Text>
+          <Text style={[styles.title, { color: text }]}>{t('shortcutSlotModal.assignTitle')}</Text>
           <Text numberOfLines={1} style={[styles.subtitle, { color: muted }]}>
-            相簿：<Text style={{ color: text, fontWeight: '600' }}>{entry.title}</Text>
+            {t('shortcutSlotModal.albumLabel')}<Text style={{ color: text, fontWeight: '600' }}>{entry.title}</Text>
           </Text>
           <Text style={[styles.instruction, { color: muted }]}>
-            點擊下方任一位置進行指派或互換：
+            {t('shortcutSlotModal.instruction')}
           </Text>
 
           {/* 4 個橫向排列的元素，呼應主畫面底部位置 */}
@@ -122,7 +124,7 @@ export function ShortcutSlotModal({
                         fontWeight: isCurrent ? '700' : '500',
                       },
                     ]}>
-                    {isCurrent ? '目前位置' : occupant ? occupant.title : '未設定'}
+                    {isCurrent ? t('shortcutSlotModal.currentPosition') : occupant ? occupant.title : t('shortcutSlotModal.notSet')}
                   </Text>
                 </Pressable>
               );
@@ -138,12 +140,12 @@ export function ShortcutSlotModal({
                 }}
                 style={[styles.clearBtn, { borderColor: border }]}>
                 <Text style={{ color: '#FF453A', fontSize: 14, fontWeight: '600' }}>
-                  清除快捷（設為未設）
+                  {t('shortcutSlotModal.clearShortcut')}
                 </Text>
               </Pressable>
             )}
             <Pressable onPress={onClose} style={[styles.cancelBtn, { backgroundColor: bg }]}>
-              <Text style={{ color: text, fontSize: 15, fontWeight: '500' }}>關閉</Text>
+              <Text style={{ color: text, fontSize: 15, fontWeight: '500' }}>{t('common.close')}</Text>
             </Pressable>
           </View>
         </View>

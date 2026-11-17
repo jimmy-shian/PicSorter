@@ -3,6 +3,7 @@ import { Dimensions, Modal, Pressable, ScrollView, StyleSheet, Text, View } from
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/theme';
 import { ArrowCircle } from '@/components/GestureIcons';
+import { useTranslation } from '@/hooks/useTranslation';
 
 interface Props {
   visible: boolean;
@@ -20,60 +21,61 @@ interface Step {
 
 export function SpotlightTutorial({ visible, onClose }: Props) {
   const { bg, text, muted, border, card } = useTheme();
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [stepIndex, setStepIndex] = useState(0);
 
   const steps: Step[] = [
     {
-      badge: '手勢整理',
-      title: '四向滑動，直覺分類',
-      desc: '• 向上滑：放入上滑目標相簿\n• 向右滑：標記為待刪除\n• 向左滑：略過不處理\n• 向下滑：放入下滑目標相簿（額外分類）\n\n點「上滑」目標列可設定上下滑相簿。下滑目標會在底部四個文字選項中高亮，點選選項可直接分類。長按照片 200ms 後拖曳，可放入任意顯示中的相簿；想看照片在系統哪些相簿，點工具列 ⓘ「查看」。\n\n可在「設定」中自訂方向動作、互換或設為無動作！',
+      badge: t('tutorial.step1Badge'),
+      title: t('tutorial.step1Title'),
+      desc: t('tutorial.step1Desc'),
       renderIllustration: (tc, mc, cbg) => (
         <View style={styles.gestureGrid}>
           <View style={styles.gridTop}>
             <ArrowCircle direction="up" size={24} color={tc} />
-            <Text style={[styles.gridLabel, { color: tc }]}>上滑：目標相簿</Text>
+            <Text style={[styles.gridLabel, { color: tc }]}>{t('tutorial.illuUpLabel')}</Text>
           </View>
           <View style={styles.gridMid}>
             <View style={styles.gridMidItem}>
               <ArrowCircle direction="left" size={24} color={mc} />
-              <Text style={[styles.gridLabel, { color: mc }]}>左滑：略過</Text>
+              <Text style={[styles.gridLabel, { color: mc }]}>{t('tutorial.illuLeftLabel')}</Text>
             </View>
             <View style={[styles.gridCard, { backgroundColor: cbg, borderColor: tc }]}>
-              <Text style={[styles.gridCardText, { color: tc }]}>照片卡片</Text>
+              <Text style={[styles.gridCardText, { color: tc }]}>{t('tutorial.illuCardLabel')}</Text>
             </View>
             <View style={styles.gridMidItem}>
               <ArrowCircle direction="right" size={24} color="#DC2626" />
-              <Text style={[styles.gridLabel, { color: '#DC2626' }]}>右滑：捨棄</Text>
+              <Text style={[styles.gridLabel, { color: '#DC2626' }]}>{t('tutorial.illuRightLabel')}</Text>
             </View>
           </View>
           <View style={styles.gridBottom}>
             <ArrowCircle direction="down" size={24} color={mc} />
-            <Text style={[styles.gridLabel, { color: mc }]}>下滑：額外分類</Text>
+            <Text style={[styles.gridLabel, { color: mc }]}>{t('tutorial.illuDownLabel')}</Text>
           </View>
         </View>
       ),
     },
     {
-      badge: '細看照片',
-      title: '輕觸開內建相片檢視',
-      desc: '主卡保持滑動手感，不吃雙指手勢。想細看時輕觸照片，直接開啟手機內建的相片檢視，放大、雙擊、滑動瀏覽都由系統原生處理，返回 App 繼續分類。',
+      badge: t('tutorial.step2Badge'),
+      title: t('tutorial.step2Title'),
+      desc: t('tutorial.step2Desc'),
       renderIllustration: (tc) => (
         <View style={styles.zoomIllu}>
-          <Text style={[styles.zoomPinchText, { color: tc }]}>👆 輕觸照片細看</Text>
-          <Text style={[styles.zoomSubText, { color: muted }]}>開手機內建相片檢視 · 系統原生縮放</Text>
+          <Text style={[styles.zoomPinchText, { color: tc }]}>{t('tutorial.illuTapLabel')}</Text>
+          <Text style={[styles.zoomSubText, { color: muted }]}>{t('tutorial.illuZoomSub')}</Text>
         </View>
       ),
     },
     {
-      badge: '目標相簿',
-      title: '極簡底部列與快捷按鈕',
-      desc: '• 點「上滑」目標列的「編輯」，可在上滑／下滑分頁設定各自相簿。\n• 下滑目標以底部選項高亮表示。四個文字選項可點選分類，也可長按照片後拖曳放入。\n• 分類手勢頁的星號可設定最多 4 個快捷，勾選代表目前的手勢目標。管理頁可獨立調整快捷、排序、固定與顯示狀態。按「完成」儲存。',
+      badge: t('tutorial.step3Badge'),
+      title: t('tutorial.step3Title'),
+      desc: t('tutorial.step3Desc'),
     },
     {
-      badge: '安全保障',
-      title: '檢查結果後再套用',
-      desc: '滑動過程只在手機本機記錄，不會立即移動或刪除系統相簿中的檔案。\n\n隨時點右上角「結束」查看整理結果，套用前可檢查結果，移入垃圾桶也可選擇不再顯示 App 確認。系統必要的授權仍會保留。',
+      badge: t('tutorial.step4Badge'),
+      title: t('tutorial.step4Title'),
+      desc: t('tutorial.step4Desc'),
     },
   ];
 
@@ -112,7 +114,7 @@ export function SpotlightTutorial({ visible, onClose }: Props) {
               <Text style={[styles.badgeText, { color: text }]}>{current.badge}</Text>
             </View>
             <Pressable onPress={handleSkip} hitSlop={10}>
-              <Text style={[styles.skipText, { color: muted }]}>略過教學</Text>
+              <Text style={[styles.skipText, { color: muted }]}>{t('tutorial.skipTutorial')}</Text>
             </Pressable>
           </View>
 
@@ -149,7 +151,7 @@ export function SpotlightTutorial({ visible, onClose }: Props) {
               ))}
             </View>
             <Pressable style={[styles.nextBtn, { backgroundColor: text }]} onPress={handleNext}>
-              <Text style={[styles.nextText, { color: bg }]}>{isLast ? '開始整理' : '下一步 ›'}</Text>
+              <Text style={[styles.nextText, { color: bg }]}>{isLast ? t('tutorial.buttonStart') : t('tutorial.buttonNext')}</Text>
             </Pressable>
           </View>
         </View>

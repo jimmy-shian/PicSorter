@@ -7,6 +7,7 @@ import type { AlbumEntry } from '@/lib/album-order';
 import { edgeScroll, reorderIndex } from '@/lib/drag-geometry';
 import { albumDisplayGroups, reorderAlbumGroup } from '@/lib/gesture-albums';
 import { useTheme } from '@/lib/theme';
+import { useTranslation } from '@/hooks/useTranslation';
 import { EyeIcon, EyeOffIcon, PinIcon } from './GestureIcons';
 import { ShortcutSlotModal } from './ShortcutSlotModal';
 
@@ -64,6 +65,7 @@ function ManagerRow({
   onHidden: () => void;
 }) {
   const { text, muted, card, border } = useTheme();
+  const { t } = useTranslation();
   const [position] = useState(() => new Animated.Value(y));
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const started = useRef(false);
@@ -131,10 +133,10 @@ function ManagerRow({
         onResponderTerminationRequest={() => !started.current}
         onResponderRelease={() => finish(false)}
         onResponderTerminate={() => finish(true)}
-        accessibilityLabel={`拖曳調整 ${entry.title} 順序`}
+        accessibilityLabel={t('albumManager.accessibilityDrag', { title: entry.title })}
         accessibilityState={{ disabled: disabled || entry.hidden }}
-        accessibilityHint={entry.hidden ? '恢復顯示後可調整順序' : '長按拖曳，或使用上移與下移動作'}
-        accessibilityActions={entry.hidden ? [] : [{ name: 'increment', label: '下移' }, { name: 'decrement', label: '上移' }]}
+        accessibilityHint={entry.hidden ? t('albumManager.accessibilityHintHidden') : t('albumManager.accessibilityHintVisible')}
+        accessibilityActions={entry.hidden ? [] : [{ name: 'increment', label: t('albumManager.accessibilityActionMoveDown') }, { name: 'decrement', label: t('albumManager.accessibilityActionMoveUp') }]}
         onAccessibilityAction={(event) => onStep(event.nativeEvent.actionName === 'increment' ? 1 : -1)}>
         <Text style={{ color: muted, fontSize: 24 }}>☷</Text>
       </View>
@@ -142,14 +144,17 @@ function ManagerRow({
         <Text numberOfLines={1} style={{ color: entry.hidden ? muted : text, fontSize: 15, fontWeight: '500' }}>
           {entry.title}
         </Text>
-        {entry.hidden && <Text style={{ color: muted, fontSize: 12 }}>隱藏</Text>}
+        {entry.hidden && <Text style={{ color: muted, fontSize: 12 }}>{t('common.hide')}</Text>}
       </View>
       <View style={styles.actions}>
         <Pressable
           disabled={disabled || entry.hidden}
           onPress={onOpenShortcut}
           accessibilityRole="button"
-          accessibilityLabel={`設定快捷位置：${entry.title}，目前${shortcutIndex >= 0 ? `為快捷 ${shortcutIndex + 1}` : '未設'}`}
+          accessibilityLabel={t('albumManager.accessibilityShortcutSet', {
+            title: entry.title,
+            status: shortcutIndex >= 0 ? t('albumManager.shortcutCurrentFull', { index: shortcutIndex + 1 }) : t('albumManager.shortcutNotSet'),
+          })}
           accessibilityState={{ disabled: disabled || entry.hidden }}
           style={styles.shortcutTouch}>
           <View
@@ -168,7 +173,7 @@ function ManagerRow({
                 fontSize: 11,
                 fontWeight: shortcutIndex >= 0 ? '600' : '400',
               }}>
-              {shortcutIndex >= 0 ? `${shortcutIndex + 1}` : '未設'}
+              {shortcutIndex >= 0 ? t('albumManager.shortcutCurrent', { index: shortcutIndex + 1 }) : t('albumManager.shortcutNotSet')}
             </Text>
           </View>
         </Pressable>
@@ -176,7 +181,7 @@ function ManagerRow({
           disabled={disabled}
           accessibilityRole="button"
           accessibilityState={{ selected: entry.pinned, disabled }}
-          accessibilityLabel={`${entry.pinned ? '取消固定' : '固定'} ${entry.title}`}
+          accessibilityLabel={t('albumManager.accessibilityPinToggle', { action: entry.pinned ? t('common.unpin') : t('common.pin'), title: entry.title })}
           style={styles.icon}
           onPress={onPin}>
           <PinIcon size={21} color={entry.pinned ? '#168BFF' : muted} pinned={entry.pinned} />
@@ -185,7 +190,7 @@ function ManagerRow({
           disabled={disabled}
           accessibilityRole="button"
           accessibilityState={{ disabled }}
-          accessibilityLabel={`${entry.hidden ? '顯示' : '隱藏'} ${entry.title}`}
+          accessibilityLabel={t('albumManager.accessibilityHideToggle', { action: entry.hidden ? t('common.show') : t('common.hide'), title: entry.title })}
           style={styles.icon}
           onPress={onHidden}>
           {entry.hidden ? <EyeOffIcon size={21} color={muted} /> : <EyeIcon size={21} color="#168BFF" />}
@@ -205,6 +210,7 @@ export function AlbumManagerList({
   onClearShortcut,
 }: Props) {
   const { text, muted, border, card } = useTheme();
+  const { t } = useTranslation();
   const { fontScale } = useWindowDimensions();
   const height = Math.max(44, Math.ceil(40 * fontScale));
   const [drag, setDrag] = useState<{ id: string; y: number } | null>(null);
@@ -376,15 +382,15 @@ export function AlbumManagerList({
             ]}>
             <View style={{ gap: 2 }}>
               <View style={styles.sectionTitle}>
-                <Text style={{ color: text, fontSize: 15, fontWeight: '600' }}>固定</Text>
+                <Text style={{ color: text, fontSize: 15, fontWeight: '600' }}>{t('common.pin')}</Text>
                 <Text style={[styles.count, { color: muted, backgroundColor: border }]}>{pinnedGroup.length}</Text>
               </View>
-              <Text style={{ color: muted, fontSize: 11 }}>固定在最前方</Text>
+              <Text style={{ color: muted, fontSize: 11 }}>{t('albumManager.pinnedTitle')}</Text>
             </View>
           </View>
           {pinnedGroup.length === 0 && (
             <Text style={{ position: 'absolute', top: pinnedStart, left: 12, color: muted, fontSize: 12 }}>
-              尚未固定任何相簿
+              {t('albumManager.noPinnedHint')}
             </Text>
           )}
           <View
@@ -401,7 +407,7 @@ export function AlbumManagerList({
               },
             ]}>
             <View style={styles.sectionTitle}>
-              <Text style={{ color: text, fontSize: 15, fontWeight: '600' }}>其他相簿</Text>
+              <Text style={{ color: text, fontSize: 15, fontWeight: '600' }}>{t('albumManager.otherAlbums')}</Text>
               <Text style={[styles.count, { color: muted, backgroundColor: border }]}>{normalGroup.length}</Text>
             </View>
           </View>
@@ -431,7 +437,7 @@ export function AlbumManagerList({
                   },
                 ]}>
                 <View style={styles.sectionTitle}>
-                  <Text style={{ color: text, fontSize: 15, fontWeight: '600' }}>已隱藏</Text>
+                  <Text style={{ color: text, fontSize: 15, fontWeight: '600' }}>{t('albumOrderEditor.sectionHidden')}</Text>
                   <Text style={[styles.count, { color: muted, backgroundColor: border }]}>{hiddenGroup.length}</Text>
                 </View>
               </View>
@@ -485,7 +491,7 @@ export function AlbumManagerList({
                     velocity: 0,
                   };
                   setDrag({ id: entry.id, y: index * height });
-                  AccessibilityInfo.announceForAccessibility(`開始移動 ${entry.title}`);
+                  AccessibilityInfo.announceForAccessibility(t('albumManager.announceMoving', { title: entry.title }));
                 }}
                 onMove={move}
                 onEnd={(cancel) => {
@@ -500,7 +506,7 @@ export function AlbumManagerList({
                   if (target < 0 || target >= ids.length) return;
                   [ids[index], ids[target]] = [ids[target], ids[index]];
                   onChange(reorderAlbumGroup(entries, ids));
-                  AccessibilityInfo.announceForAccessibility(`${entry.title}，第 ${target + 1} 位`);
+                  AccessibilityInfo.announceForAccessibility(t('albumManager.movedToPosition', { title: entry.title, position: target + 1 }));
                 }}
                 onPin={() => {
                   animate();
@@ -513,7 +519,7 @@ export function AlbumManagerList({
         </View>
         {pinnedGroup.length + normalGroup.length + hiddenGroup.length === 0 && (
           <Text style={{ color: text, paddingVertical: 24 }}>
-            {keyword.trim() ? '找不到符合的相簿' : '沒有可管理的相簿'}
+            {keyword.trim() ? t('albumManager.emptySearch') : t('albumManager.emptyAll')}
           </Text>
         )}
         <View style={{ borderBottomColor: border, borderBottomWidth: StyleSheet.hairlineWidth, marginTop: 8 }} />
