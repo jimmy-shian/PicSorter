@@ -455,5 +455,8 @@
   },
   "targetAlbumSheet": {
     "empty": "사용 가능한 대상 앨범이 없습니다"
+  },
+  "announcement": {
+    "defaultTag": "공지사항"
   }
 }

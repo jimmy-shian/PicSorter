@@ -455,5 +455,8 @@
   },
   "targetAlbumSheet": {
     "empty": "沒有可用的目標相簿"
+  },
+  "announcement": {
+    "defaultTag": "官方公告"
   }
 }

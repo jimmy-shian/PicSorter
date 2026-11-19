@@ -455,5 +455,8 @@
   },
   "targetAlbumSheet": {
     "empty": "No target albums available"
+  },
+  "announcement": {
+    "defaultTag": "Announcement"
   }
 }

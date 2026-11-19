@@ -455,5 +455,8 @@
   },
   "targetAlbumSheet": {
     "empty": "利用できる目標アルバムがありません"
+  },
+  "announcement": {
+    "defaultTag": "お知らせ"
   }
 }
