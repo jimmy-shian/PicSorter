@@ -1,16 +1,12 @@
 import { useAdBypass } from '../lib/ad-bypass';
 import { useTheme } from '../lib/theme';
 import { useTranslation } from '@/hooks/useTranslation';
+import { AdErrorBoundary } from './AdErrorBoundary';
 import { ArrowCircle } from './GestureIcons';
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Modal, Pressable, Image } from 'react-native';
-import {
-  NativeAdView,
-  NativeAsset,
-  NativeAssetType,
-  NativeMediaView,
-  useNativeAd,
-} from 'react-native-google-mobile-ads';
+import { NativeAdCard } from './NativeAdCard';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Text, StyleSheet, Modal, Pressable } from 'react-native';
+import { useNativeAd } from 'react-native-google-mobile-ads';
 import adConfig from '../../admob-config.json';
 
 interface SplashAdModalProps {
@@ -24,6 +20,15 @@ const AD_DURATION = 5;
 const BACKDOOR_WINDOW = 5000;
 const BACKDOOR_CLICKS = 5;
 
+export function SplashAdModal({ visible, onClose }: SplashAdModalProps) {
+  if (!visible) return null;
+  return (
+    <AdErrorBoundary onError={onClose}>
+      <SplashAdContent visible={visible} onClose={onClose} />
+    </AdErrorBoundary>
+  );
+}
+
 /**
  * 開場廣告：直接重現 ClassifyPhoto 的分類畫面。
  * 一張照片卡，四周浮著 App 真實使用的手勢膠囊提示條。
@@ -36,12 +41,25 @@ const BACKDOOR_CLICKS = 5;
  * 因此 AdMob 後台的開場廣告單元必須是「原生進階」類型；
  * 若仍是「應用程式開放」單元，會一直 no-fill（畫面只顯示設計佔位）。
  */
-export function SplashAdModal({ visible, onClose }: SplashAdModalProps) {
+function SplashAdContent({ visible, onClose }: SplashAdModalProps) {
   const { bypassed, ready, enableBypass } = useAdBypass();
   const { bg, card, text, muted, accent, border } = useTheme();
   const { t } = useTranslation();
   const [countdown, setCountdown] = useState(AD_DURATION);
+  const [loadWaitTimedOut, setLoadWaitTimedOut] = useState(false);
   const clickTimestampsRef = useRef<number[]>([]);
+  const closedRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  const closeOnce = useCallback(() => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    onCloseRef.current();
+  }, []);
 
   const splashAdUnitId = adConfig.units.splash;
   const hasNativeUnit =
@@ -59,35 +77,51 @@ export function SplashAdModal({ visible, onClose }: SplashAdModalProps) {
     clickTimestampsRef.current = recent;
 
     if (recent.length >= BACKDOOR_CLICKS) {
-      await enableBypass();
-      onClose();
+      try {
+        await enableBypass();
+      } catch (error) {
+        console.warn('Failed to persist ad bypass preference:', error);
+      } finally {
+        closeOnce();
+      }
     }
   };
 
   useEffect(() => {
+    if (!ready || !visible || bypassed || status !== 'loading') return;
+    const timer = setTimeout(() => setLoadWaitTimedOut(true), 3000);
+    return () => clearTimeout(timer);
+  }, [ready, visible, bypassed, status]);
+
+  const canStartCountdown = ready && visible && !bypassed && (status !== 'loading' || loadWaitTimedOut);
+
+  useEffect(() => {
     if (!ready) return;
     if (!visible || bypassed) {
-      if (bypassed && visible) onClose();
+      if (bypassed && visible) closeOnce();
       return;
     }
+    if (!canStartCountdown) return;
 
     let active = true;
     let remaining = AD_DURATION;
     const timer = setInterval(() => {
       remaining -= 1;
-      setCountdown(Math.max(0, remaining));
+      if (active) {
+        setCountdown(Math.max(0, remaining));
+      }
       if (remaining <= 0) {
-        if (timer) clearInterval(timer);
+        clearInterval(timer);
         // 廣告渲染在版位內（非全螢幕蓋版），倒數結束由程式關閉；no-fill 也一樣
-        if (active) onClose();
+        if (active) closeOnce();
       }
     }, 1000);
 
     return () => {
       active = false;
-      if (timer) clearInterval(timer);
+      clearInterval(timer);
     };
-  }, [visible, onClose, ready, bypassed]);
+  }, [visible, closeOnce, ready, bypassed, canStartCountdown]);
 
   if (bypassed || !visible) return null;
 
@@ -124,51 +158,8 @@ export function SplashAdModal({ visible, onClose }: SplashAdModalProps) {
 
         {/* 照片卡：廣告素材渲染在照片本體位置，四周是 App 真實的手勢膠囊提示 */}
         <Pressable onPress={handleBackdoorTap} style={[styles.photoCard, { backgroundColor: card, borderColor: border }]}>
-          {/* 照片本體位置：原生進階廣告 / 佔位 */}
           {showNative && nativeAd ? (
-            <NativeAdView nativeAd={nativeAd} style={[styles.photoArea, { backgroundColor: bg, borderColor: border }]}>
-              {/* Google 政策：必須標示為廣告 */}
-              <View style={styles.adBadgeRow}>
-                <View style={styles.adBadge}>
-                  <Text style={styles.adBadgeText}>{t('ad.badge')}</Text>
-                </View>
-                {nativeAd.advertiser ? (
-                  <Text numberOfLines={1} style={[styles.advertiser, { color: muted }]}>
-                    {nativeAd.advertiser}
-                  </Text>
-                ) : null}
-              </View>
-
-              {/* 媒體／圖片 = 照片本體 */}
-              {nativeAd.mediaContent ? (
-                <NativeMediaView style={[styles.media, { backgroundColor: card }]} />
-              ) : nativeAd.icon ? (
-                <Image source={{ uri: nativeAd.icon.url }} style={[styles.media, { backgroundColor: card }]} resizeMode="contain" />
-              ) : null}
-
-              {/* 標題 + 內文 */}
-              <NativeAsset assetType={NativeAssetType.HEADLINE}>
-                <Text numberOfLines={2} style={[styles.headline, { color: text }]}>
-                  {nativeAd.headline}
-                </Text>
-              </NativeAsset>
-              {nativeAd.body ? (
-                <NativeAsset assetType={NativeAssetType.BODY}>
-                  <Text numberOfLines={2} style={[styles.bodyText, { color: muted }]}>
-                    {nativeAd.body}
-                  </Text>
-                </NativeAsset>
-              ) : null}
-
-              {/* CTA（= App 主要按鈕樣式；點擊由 NativeAdView 記錄） */}
-              <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
-                <View style={[styles.cta, { backgroundColor: accent }]}>
-                  <Text numberOfLines={1} style={[styles.ctaText, { color: bg }]}>
-                    {nativeAd.callToAction || t('ad.ctaDefault')}
-                  </Text>
-                </View>
-              </NativeAsset>
-            </NativeAdView>
+            <NativeAdCard nativeAd={nativeAd} mediaHeight={240} />
           ) : (
             <View style={[styles.photoArea, { backgroundColor: bg, borderColor: border }]}>
               <View style={[styles.placeholder, { borderColor: border, backgroundColor: card }]}>
@@ -290,58 +281,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   photoArea: {
+    width: '100%',
     borderRadius: 10,
     borderWidth: 1,
     padding: 12,
     gap: 10,
   },
-  adBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  adBadge: {
-    backgroundColor: 'rgba(41,37,36,0.92)',
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  adBadgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  advertiser: {
-    fontSize: 11,
-    flexShrink: 1,
-  },
-  media: {
-    width: '100%',
-    height: 150,
-    borderRadius: 8,
-  },
-  headline: {
-    fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 20,
-  },
-  bodyText: {
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  cta: {
-    alignSelf: 'flex-start',
-    borderRadius: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 9,
-  },
-  ctaText: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
   placeholder: {
     width: '100%',
-    minHeight: 130,
+    minHeight: 240,
     borderRadius: 10,
     borderWidth: 1,
     borderStyle: 'dashed',

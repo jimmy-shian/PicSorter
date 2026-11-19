@@ -1,16 +1,12 @@
 import { useAdBypass } from '../lib/ad-bypass';
 import { useTheme } from '../lib/theme';
 import { useTranslation } from '@/hooks/useTranslation';
+import { AdErrorBoundary } from './AdErrorBoundary';
 import { ArrowCircle } from './GestureIcons';
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Modal, Pressable, Image } from 'react-native';
-import {
-  NativeAdView,
-  NativeAsset,
-  NativeAssetType,
-  NativeMediaView,
-  useNativeAd,
-} from 'react-native-google-mobile-ads';
+import { NativeAdCard } from './NativeAdCard';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Text, StyleSheet, Modal, Pressable } from 'react-native';
+import { useNativeAd } from 'react-native-google-mobile-ads';
 import adConfig from '../../admob-config.json';
 
 interface MilestoneAdModalProps {
@@ -26,7 +22,19 @@ const BACKDOOR_WINDOW = 5000;
 const BACKDOOR_CLICKS = 5;
 
 export function MilestoneAdModal(props: MilestoneAdModalProps) {
-  return props.visible ? <MilestoneAdContent key={props.sortedCount} {...props} /> : null;
+  const [cycle, setCycle] = useState(0);
+  const onCloseProp = props.onClose;
+
+  const handleClose = useCallback(() => {
+    onCloseProp();
+    setCycle((c) => c + 1);
+  }, [onCloseProp]);
+
+  return (
+    <AdErrorBoundary key={cycle} onError={handleClose}>
+      <MilestoneAdContent {...props} onClose={handleClose} />
+    </AdErrorBoundary>
+  );
 }
 
 /**
@@ -44,14 +52,27 @@ function MilestoneAdContent({ visible, sortedCount, onClose }: MilestoneAdModalP
   const { dark, bg, card, text, muted, accent, border } = useTheme();
   const { t } = useTranslation();
   const [countdown, setCountdown] = useState(AD_DURATION);
+  const [loadWaitTimedOut, setLoadWaitTimedOut] = useState(false);
   const clickTimestampsRef = useRef<number[]>([]);
+  const closedRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  const closeOnce = useCallback(() => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    onCloseRef.current();
+  }, []);
 
   const milestoneAdUnitId = adConfig.units.milestone;
   const hasNativeUnit = typeof milestoneAdUnitId === 'string' && milestoneAdUnitId.startsWith('ca-app-pub-');
 
   const { status, nativeAd } = useNativeAd({
     adUnitId: hasNativeUnit ? (milestoneAdUnitId as string) : null,
-    autoLoad: ready && !bypassed && visible,
+    autoLoad: ready && !bypassed,
   });
 
   // 後門略過：5 秒內累計 5 次點擊
@@ -61,37 +82,51 @@ function MilestoneAdContent({ visible, sortedCount, onClose }: MilestoneAdModalP
     clickTimestampsRef.current = recent;
 
     if (recent.length >= BACKDOOR_CLICKS) {
-      await enableBypass();
-      onClose();
+      try {
+        await enableBypass();
+      } catch (error) {
+        console.warn('Failed to persist ad bypass preference:', error);
+      } finally {
+        closeOnce();
+      }
     }
   };
 
   useEffect(() => {
+    if (!ready || !visible || bypassed || status !== 'loading') return;
+    const timer = setTimeout(() => setLoadWaitTimedOut(true), 3000);
+    return () => clearTimeout(timer);
+  }, [ready, visible, bypassed, status]);
+
+  const canStartCountdown = ready && visible && !bypassed && (status !== 'loading' || loadWaitTimedOut);
+
+  useEffect(() => {
     if (!ready) return;
     if (!visible || bypassed) {
-      if (bypassed && visible) onClose();
+      if (bypassed && visible) closeOnce();
       return;
     }
+    if (!canStartCountdown) return;
 
     let active = true;
-    let timer: ReturnType<typeof setInterval> | undefined;
-
     let remaining = AD_DURATION;
-    timer = setInterval(() => {
+    const timer = setInterval(() => {
       remaining -= 1;
-      setCountdown(Math.max(0, remaining));
+      if (active) {
+        setCountdown(Math.max(0, remaining));
+      }
       if (remaining <= 0) {
-        if (timer) clearInterval(timer);
+        clearInterval(timer);
         // 原生廣告渲染在版位內，倒數結束直接關閉；沒回填（no-fill）也一樣關閉
-        if (active) onClose();
+        if (active) closeOnce();
       }
     }, 1000);
 
     return () => {
       active = false;
-      if (timer) clearInterval(timer);
+      clearInterval(timer);
     };
-  }, [visible, onClose, ready, bypassed]);
+  }, [visible, closeOnce, ready, bypassed, canStartCountdown]);
 
   if (!visible || bypassed) return null;
 
@@ -103,7 +138,11 @@ function MilestoneAdContent({ visible, sortedCount, onClose }: MilestoneAdModalP
         <View style={[styles.dialog, { backgroundColor: card, borderColor: border }]}>
           {/* 頂列：里程碑 + 倒數膠囊 */}
           <View style={styles.topBar}>
-            <View style={styles.brandRow}>
+            <Pressable
+              onPress={handleBackdoorTap}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={styles.brandRow}
+            >
               <View style={[styles.checkBadge, { backgroundColor: bg, borderColor: border }]}>
                 <Text style={[styles.checkText, { color: accent }]}>✓</Text>
               </View>
@@ -111,7 +150,7 @@ function MilestoneAdContent({ visible, sortedCount, onClose }: MilestoneAdModalP
                 <Text style={[styles.appTitle, { color: text }]}>{t('milestoneAd.title')}</Text>
                 <Text style={[styles.appMeta, { color: muted }]}>{t('milestoneAd.countLine', { count: sortedCount })}</Text>
               </View>
-            </View>
+            </Pressable>
             <View style={styles.countPill}>
               <Text style={styles.countPillText}>{countdown}s</Text>
             </View>
@@ -124,49 +163,7 @@ function MilestoneAdContent({ visible, sortedCount, onClose }: MilestoneAdModalP
 
           {/* 原生進階廣告：素材渲染在「照片本體」位置 */}
           {showNative && nativeAd ? (
-            <NativeAdView nativeAd={nativeAd} style={[styles.photoArea, { backgroundColor: bg, borderColor: border }]}>
-              {/* Google 政策：必須標示為廣告 */}
-              <View style={styles.adBadgeRow}>
-                <View style={styles.adBadge}>
-                  <Text style={styles.adBadgeText}>{t('ad.badge')}</Text>
-                </View>
-                {nativeAd.advertiser ? (
-                  <Text numberOfLines={1} style={[styles.advertiser, { color: muted }]}>
-                    {nativeAd.advertiser}
-                  </Text>
-                ) : null}
-              </View>
-
-              {/* 媒體／圖片 = 照片本體 */}
-              {nativeAd.mediaContent ? (
-                <NativeMediaView style={[styles.media, { backgroundColor: card }]} />
-              ) : nativeAd.icon ? (
-                <Image source={{ uri: nativeAd.icon.url }} style={[styles.media, { backgroundColor: card }]} resizeMode="contain" />
-              ) : null}
-
-              {/* 標題 + 內文 */}
-              <NativeAsset assetType={NativeAssetType.HEADLINE}>
-                <Text numberOfLines={2} style={[styles.headline, { color: text }]}>
-                  {nativeAd.headline}
-                </Text>
-              </NativeAsset>
-              {nativeAd.body ? (
-                <NativeAsset assetType={NativeAssetType.BODY}>
-                  <Text numberOfLines={2} style={[styles.bodyText, { color: muted }]}>
-                    {nativeAd.body}
-                  </Text>
-                </NativeAsset>
-              ) : null}
-
-              {/* CTA（= App 主要按鈕樣式，同時是後門觸發點） */}
-              <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
-                <Pressable onPress={handleBackdoorTap} style={[styles.cta, { backgroundColor: accent }]}>
-                  <Text numberOfLines={1} style={[styles.ctaText, { color: bg }]}>
-                    {nativeAd.callToAction || t('ad.ctaDefault')}
-                  </Text>
-                </Pressable>
-              </NativeAsset>
-            </NativeAdView>
+            <NativeAdCard nativeAd={nativeAd} mediaHeight={220} onCtaPress={handleBackdoorTap} />
           ) : (
             <Pressable
               onPress={handleBackdoorTap}
@@ -282,58 +279,15 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   photoArea: {
+    width: '100%',
     borderRadius: 10,
     borderWidth: 1,
     padding: 12,
     gap: 10,
   },
-  adBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  adBadge: {
-    backgroundColor: 'rgba(41,37,36,0.92)',
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  adBadgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  advertiser: {
-    fontSize: 11,
-    flexShrink: 1,
-  },
-  media: {
-    width: '100%',
-    height: 140,
-    borderRadius: 8,
-  },
-  headline: {
-    fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 20,
-  },
-  bodyText: {
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  cta: {
-    alignSelf: 'flex-start',
-    borderRadius: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 9,
-  },
-  ctaText: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
   placeholder: {
     width: '100%',
-    minHeight: 80,
+    minHeight: 220,
     borderRadius: 10,
     borderWidth: 1,
     borderStyle: 'dashed',

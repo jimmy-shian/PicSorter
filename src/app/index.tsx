@@ -5,6 +5,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Link, router } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { presentPermissionsPicker, usePermissions } from 'expo-media-library';
+import { useSQLiteContext } from 'expo-sqlite';
+import { getPref, setPref } from '@/lib/db';
 import { useSession } from '@/lib/session-context';
 import { useTheme } from '@/lib/theme';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -65,19 +67,69 @@ export default function ClassifyScreen() {
   const [inspectVisible, setInspectVisible] = useState(false);
   const [inspectLoading, setInspectLoading] = useState(false);
   const [inspectAlbums, setInspectAlbums] = useState<string[]>([]);
+  const db = useSQLiteContext();
+  const session = useSession();
   const [sortedCount, setSortedCount] = useState(0);
+  const sortedCountRef = useRef(0);
+  const sinceLastAdRef = useRef(0);
   const [milestoneVisible, setMilestoneVisible] = useState(false);
 
+  useEffect(() => {
+    let active = true;
+    void Promise.all([
+      getPref(db, 'milestone_sorted_total', '0'),
+      getPref(db, 'milestone_since_last_ad', '0'),
+    ])
+      .then(([rawTotal, rawSince]) => {
+        if (!active) return;
+        const parsedTotal = parseInt(rawTotal, 10);
+        const total = Number.isFinite(parsedTotal) && parsedTotal >= 0 ? parsedTotal : 0;
+        const parsedSince = parseInt(rawSince, 10);
+        const sinceLast = Number.isFinite(parsedSince) && parsedSince >= 0 ? parsedSince : 0;
+        const syncedTotal = Math.max(total, session.processedCount);
+        sortedCountRef.current = syncedTotal;
+        sinceLastAdRef.current = sinceLast;
+        setSortedCount(syncedTotal);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+    // 啟動時從 DB 載入累計數即可，後續由下方 processedCount 同步與 incrementCount 維護
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db]);
+
+  useEffect(() => {
+    if (session.processedCount > sortedCountRef.current) {
+      sortedCountRef.current = session.processedCount;
+    }
+  }, [session.processedCount]);
+
   const incrementCount = useCallback(() => {
-    setSortedCount((prev) => {
-      const next = prev + 1;
-      if (next > 0 && next % 50 === 0) {
-        setMilestoneVisible(true);
-      }
-      return next;
-    });
-  }, []);
-  const session = useSession();
+    const nextTotal = Math.max(sortedCountRef.current + 1, session.processedCount + 1);
+    const nextSinceLast = sinceLastAdRef.current + 1;
+    const sessionNext = session.processedCount + 1;
+    sortedCountRef.current = nextTotal;
+
+    if (nextSinceLast >= 50 || (sessionNext > 0 && sessionNext % 50 === 0 && nextSinceLast >= 1)) {
+      sinceLastAdRef.current = 0;
+      const displayCount = sessionNext > 0 && sessionNext % 50 === 0 ? sessionNext : nextTotal;
+      setSortedCount(displayCount);
+      setMilestoneVisible(true);
+      void Promise.all([
+        setPref(db, 'milestone_sorted_total', String(nextTotal)),
+        setPref(db, 'milestone_since_last_ad', '0'),
+      ]).catch(() => {});
+      return;
+    }
+
+    sinceLastAdRef.current = nextSinceLast;
+    setSortedCount(nextTotal);
+    void Promise.all([
+      setPref(db, 'milestone_sorted_total', String(nextTotal)),
+      setPref(db, 'milestone_since_last_ad', String(nextSinceLast)),
+    ]).catch(() => {});
+  }, [db, session.processedCount]);
 
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const appState = useRef(AppState.currentState);
@@ -181,6 +233,7 @@ export default function ClassifyScreen() {
           showNotice(t('home.classifyFailed'));
           return false;
         }
+        incrementCount();
         return true;
       }
       return false;
@@ -190,15 +243,19 @@ export default function ClassifyScreen() {
     } finally {
       finishDrag();
     }
-  }, [classifyToAlbum, finishDrag, showNotice, t]);
+  }, [classifyToAlbum, finishDrag, incrementCount, showNotice, t]);
   const quickLock = useRef(false);
   const quickClassify = useCallback(async (id: string) => {
     if (quickLock.current) return;
     quickLock.current = true;
-    try { if (!await classifyToAlbum('album', id)) showNotice(t('home.classifyFailed')); }
+    try {
+      const ok = await classifyToAlbum('album', id);
+      if (ok) incrementCount();
+      else showNotice(t('home.classifyFailed'));
+    }
     catch { showNotice(t('home.classifyFailed')); }
     finally { quickLock.current = false; }
-  }, [classifyToAlbum, showNotice, t]);
+  }, [classifyToAlbum, incrementCount, showNotice, t]);
   const gestureError = useCallback(() => showNotice(t('home.actionFailed')), [showNotice, t]);
   // 長按底部快捷晶片：頂部通知顯示完整相簿名稱（Pressable 長按後不會再觸發 onPress 分類）
   const showAlbumFullName = useCallback((id: string) => {
@@ -246,8 +303,9 @@ export default function ClassifyScreen() {
 
   const handleSkip = useCallback(async () => {
     const ok = await session.skipCurrent();
+    if (ok) incrementCount();
     if (!ok) showNotice(t('home.noMorePhotos'));
-  }, [session, showNotice, t]);
+  }, [session, showNotice, incrementCount, t]);
 
   const handleSwipeDown = useCallback(async () => {
     if (!session.downTargetId) {

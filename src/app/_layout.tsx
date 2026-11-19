@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { SplashAdModal } from '@/components/SplashAdModal';
 import { SpotlightTutorial } from '@/components/SpotlightTutorial';
 import { StudioAnnouncementModal } from '@/components/StudioAnnouncementModal';
+import { RootErrorBoundary } from '@/components/RootErrorBoundary';
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -11,17 +12,20 @@ import { NavigationBar } from 'expo-navigation-bar';
 import * as SystemUI from 'expo-system-ui';
 import { StyleSheet } from 'react-native';
 import { migrateDbIfNeeded, DATABASE_NAME } from '@/lib/db';
+import { initMobileAds } from '@/lib/ads';
 import {
   fetchActiveAnnouncement,
   markAnnouncementDismissed,
   type StudioAnnouncement,
 } from '@/lib/announcements';
+import { bindCrashGuardDb, installGlobalErrorHandler } from '@/lib/crash-guard';
 import { SessionProvider, useSession } from '@/lib/session-context';
 import { ThemeProvider, useTheme } from '@/lib/theme';
 import { useTranslation } from '@/hooks/useTranslation';
 
-// Initialize i18n early
+// Initialize i18n and global JS error guard early
 import '@/i18n';
+installGlobalErrorHandler();
 
 function ThemedStack() {
   const [showSplash, setShowSplash] = useState(true);
@@ -42,6 +46,8 @@ function ThemedStack() {
   }, [showSplash]);
 
   useEffect(() => {
+    bindCrashGuardDb(db);
+    void initMobileAds();
     let active = true;
     void fetchActiveAnnouncement(db).then((item) => {
       if (active && item) setAnnouncement(item);
@@ -103,17 +109,19 @@ function ThemedStack() {
 
 export default function RootLayout() {
   return (
-    <GestureHandlerRootView style={styles.root}>
-      <SafeAreaProvider>
-        <SQLiteProvider databaseName={DATABASE_NAME} onInit={migrateDbIfNeeded}>
-          <ThemeProvider>
-            <SessionProvider>
-              <ThemedStack />
-            </SessionProvider>
-          </ThemeProvider>
-        </SQLiteProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <RootErrorBoundary>
+      <GestureHandlerRootView style={styles.root}>
+        <SafeAreaProvider>
+          <SQLiteProvider databaseName={DATABASE_NAME} onInit={migrateDbIfNeeded}>
+            <ThemeProvider>
+              <SessionProvider>
+                <ThemedStack />
+              </SessionProvider>
+            </ThemeProvider>
+          </SQLiteProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </RootErrorBoundary>
   );
 }
 
