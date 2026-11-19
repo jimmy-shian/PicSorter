@@ -103,8 +103,8 @@
     "undo": "Undo",
     "inspect": "Inspect",
     "results": "Results",
-    "whichAlbums": "Which albums is this in?",
-    "inspectHint": "View only. Photos won't be sorted or moved.",
+    "whichAlbums": "Location",
+    "inspectDate": "Date & time",
     "noAlbumInfo": "Can't find its albums (may be in All Photos or not reported by the system)."
   },
   "settings": {
@@ -113,16 +113,18 @@
       "down": "Swipe down",
       "left": "Swipe left",
       "right": "Swipe right",
-      "actionAlbum": "Up-swipe target album",
-      "actionAlbumDesc": "Move to the up-swipe target set in Gestures",
+      "actionAlbum": "Primary target album",
+      "actionAlbumDesc": "Sort into your primary album (set in Target albums above)",
+      "actionAlbumDescWithName": "Sort into \"{{album}}\" (change in Target albums above)",
       "actionTrash": "Mark for delete",
-      "actionTrashDesc": "Mark to move to trash",
+      "actionTrashDesc": "Mark for deletion, then move to trash after review",
       "actionSkip": "Skip photo",
-      "actionSkipDesc": "Do nothing, move to next",
-      "actionInspect": "Down-swipe target album",
-      "actionInspectDesc": "Move to the down-swipe target set in Gestures",
-      "actionNone": "No action (off)",
-      "actionNoneDesc": "Swipe does nothing, snaps back"
+      "actionSkipDesc": "Leave unchanged and move to the next photo",
+      "actionInspect": "Secondary target album",
+      "actionInspectDesc": "Sort into your secondary album (switchable on the bottom bar)",
+      "actionInspectDescWithName": "Sort into \"{{album}}\" (switchable on the bottom bar)",
+      "actionNone": "Disable direction",
+      "actionNoneDesc": "Do nothing on swipe and snap the card back"
     },
     "theme": {
       "light": "Light",
@@ -154,7 +156,7 @@
     "sortOldestToNewest": "Oldest to newest",
     "gestureSectionTitle": "Gesture directions",
     "classifyAlbumSection": "Target albums",
-    "gestureHint": "Tap a direction to change its action; ⇄ swaps two directions",
+    "gestureHint": "Tap a direction to change its action; picking an action used by another direction swaps them automatically.",
     "moveConfirmTitle": "Move confirmation",
     "tutorialTitle": "Tutorial",
     "retakeTutorial": "Replay tutorial",
@@ -167,6 +169,8 @@
     "versionLine": "Version {{version}}",
     "privacyLine": "Fully offline on-device sorting. Photos never leave your phone.",
     "pickerSuffix": ": choose action",
+    "pickerSubtitle": "Choose what this swipe does. Picking an action used by another direction swaps them.",
+    "swapOccupiedTag": "Used by {{icon}} {{dir}} · tap to swap",
     "discardMessage": "{{title}} · {{done}} sorted"
   },
   "review": {

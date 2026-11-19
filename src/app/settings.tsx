@@ -15,7 +15,7 @@ import {
   getOpenSessions,
   type OpenSessionInfo,
 } from '@/lib/db';
-import type { GestureAction, GestureDirection, MoveConfirmMode, ThemeMode } from '@/types';
+import type { GestureAction, GestureDirection, ThemeMode } from '@/types';
 
 const GESTURE_DIRS: { dir: GestureDirection; label: string; icon: string }[] = [
   { dir: 'up', label: 'settings.gesture.up', icon: '↑' },
@@ -66,6 +66,18 @@ export default function SettingsScreen() {
   // 手勢方向設定 picker
   const [gestureTargetsVisible, setGestureTargetsVisible] = useState(false);
   const [pickingDir, setPickingDir] = useState<GestureDirection | null>(null);
+  const upAlbumTitle = session.targets.find((item) => item.id === session.selectedTargetId)?.title ?? null;
+  const downAlbumTitle = session.targets.find((item) => item.id === session.downTargetId)?.title ?? null;
+
+  const actionDescription = (act: GestureAction, fallbackDescKey: string): string => {
+    if (act === 'album' && upAlbumTitle) {
+      return t('settings.gesture.actionAlbumDescWithName', { album: upAlbumTitle });
+    }
+    if (act === 'inspect' && downAlbumTitle) {
+      return t('settings.gesture.actionInspectDescWithName', { album: downAlbumTitle });
+    }
+    return t(fallbackDescKey);
+  };
 
   const refresh = useCallback(async () => {
     try {
@@ -202,22 +214,6 @@ export default function SettingsScreen() {
           {t('settings.gestureHint')}
         </Text>
 
-        <Text style={[styles.label, { color: muted }]}>{t('settings.moveConfirmTitle')}</Text>
-        <View style={[styles.card, { borderColor: border, backgroundColor: card }]}>
-          {([
-            ['once', 'settings.confirmMode.once', 'settings.confirmMode.onceDesc'],
-            ['each', 'settings.confirmMode.each', 'settings.confirmMode.eachDesc'],
-          ] as [MoveConfirmMode, string, string][]).map(([modeId, label, desc]) => (
-            <Pressable key={modeId} onPress={() => void session.updateMoveConfirmMode(modeId)} style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.rowText, { color: text }]}>{t(label)}</Text>
-                <Text style={[styles.switchDesc, { color: muted }]}>{t(desc)}</Text>
-              </View>
-              {session.moveConfirmMode === modeId ? <Text style={{ color: muted }}>✓</Text> : null}
-            </Pressable>
-          ))}
-        </View>
-
 
         <Text style={[styles.label, { color: muted }]}>{t('common.trash')}</Text>
         <View style={[styles.card, { borderColor: border, backgroundColor: card }]}>
@@ -319,6 +315,9 @@ export default function SettingsScreen() {
             <Text style={[styles.pickerTitle, { color: text }]}>
               {pickingDir ? t(GESTURE_DIRS.find((g) => g.dir === pickingDir)?.label ?? '') : ''}{t('settings.pickerSuffix')}
             </Text>
+            <Text style={[styles.pickerSubtitle, { color: muted }]}>
+              {t('settings.pickerSubtitle')}
+            </Text>
             <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ gap: 10 }}>
               {GESTURE_ACTIONS.map((a) => {
                 const isActive = pickingDir ? session.gestureSettings[pickingDir] === a.action : false;
@@ -337,25 +336,39 @@ export default function SettingsScreen() {
                   <Pressable
                     key={a.action}
                     onPress={() => void handlePickAction(a.action)}
+                    accessibilityLabel={
+                      occupiedDirection
+                        ? t('settings.accessibilitySwapBadge', {
+                            pickingDirLabel: pickingDir ? t(GESTURE_DIRS.find((g) => g.dir === pickingDir)?.label ?? '') : '',
+                            newLabel: t(a.label),
+                            occupiedDirLabel: t(occupiedDirection.label),
+                            oldLabel: pickingDir ? t(actionLabel(session.gestureSettings[pickingDir])) : '',
+                          })
+                        : undefined
+                    }
                     style={[
                       styles.pickerRow,
-                      { borderColor: border, backgroundColor: isActive ? card : 'transparent' },
+                      { borderColor: isActive ? text : border, backgroundColor: isActive ? card : 'transparent' },
                     ]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.rowText, { color: text }]}>{t(a.label)}</Text>
-                      <Text style={[styles.pickerDesc, { color: muted }]}>
-                        {t(a.desc)}
+                    <View style={styles.pickerContent}>
+                      <Text style={[styles.rowText, { color: text, fontWeight: isActive ? '700' : '500' }]}>
+                        {t(a.label)}
                       </Text>
+                      <Text style={[styles.pickerDesc, { color: muted }]}>
+                        {actionDescription(a.action, a.desc)}
+                      </Text>
+                      {occupiedDirection && (
+                        <View style={[styles.swapTag, { borderColor: border, backgroundColor: card }]}>
+                          <Text style={[styles.swapTagText, { color: muted }]}>
+                            {t('settings.swapOccupiedTag', {
+                              icon: occupiedDirection.icon,
+                              dir: t(occupiedDirection.label),
+                            })}
+                          </Text>
+                        </View>
+                      )}
                     </View>
-                    {occupiedDirection && <View accessibilityLabel={t('settings.accessibilitySwapBadge', {
-                      pickingDirLabel: pickingDir ? t(GESTURE_DIRS.find((g) => g.dir === pickingDir)?.label ?? '') : '',
-                      newLabel: t(a.label),
-                      occupiedDirLabel: t(occupiedDirection.label),
-                      oldLabel: pickingDir ? t(actionLabel(session.gestureSettings[pickingDir])) : '',
-                    })} style={[styles.swapBadge, { borderColor: border }]}>
-                      <Text style={{ color: muted, fontSize: 15 }}>{GESTURE_DIRS.find((g) => g.dir === pickingDir)?.icon} ⇄ {occupiedDirection.icon}</Text>
-                    </View>}
-                    {isActive ? <Text style={{ color: muted, fontSize: 16 }}>✓</Text> : null}
+                    {isActive ? <Text style={{ color: text, fontSize: 16, fontWeight: '700' }}>✓</Text> : null}
                   </Pressable>
                 );
               })}
@@ -491,6 +504,10 @@ const styles = StyleSheet.create({
   pickerTitle: {
     fontSize: 16,
     fontWeight: '800',
+  },
+  pickerSubtitle: {
+    fontSize: 12,
+    lineHeight: 17,
     marginBottom: 4,
   },
   pickerRow: {
@@ -502,8 +519,25 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 10,
   },
+  pickerContent: {
+    flex: 1,
+    minWidth: 0,
+  },
   pickerDesc: {
     fontSize: 12,
-    marginTop: 2,
+    lineHeight: 17,
+    marginTop: 3,
+  },
+  swapTag: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: 6,
+  },
+  swapTagText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

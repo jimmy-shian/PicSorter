@@ -2,7 +2,7 @@ import { MilestoneAdModal } from '@/components/MilestoneAdModal';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Link, router } from 'expo-router';
+import { router } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { presentPermissionsPicker, usePermissions } from 'expo-media-library';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -15,7 +15,6 @@ import { SourceAlbumPicker } from '@/components/SourceAlbumPicker';
 import { ClassifyPhoto } from '@/components/ClassifyPhoto';
 import { AlbumBar, type AlbumBarHandle } from '@/components/AlbumBar';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { SpotlightTutorial } from '@/components/SpotlightTutorial';
 import { Chevron, GearIcon, InfoIcon, SortIcon, UndoIcon } from '@/components/GestureIcons';
 import type { SortOrder } from '@/types';
 
@@ -559,20 +558,6 @@ export default function ClassifyScreen() {
               {t('home.inspect')}
             </Text>
           </Pressable>
-          <View style={[styles.dockDivider, { backgroundColor: border }]} />
-          <Link href="/review" asChild>
-            <Pressable style={styles.dockBtn} hitSlop={8}>
-              <Text numberOfLines={1} style={[styles.dockText, { color: text }]}>
-                {t('home.results')}
-              </Text>
-              <View style={[styles.dockBadge, { backgroundColor: session.processedCount > 0 ? text : border }]}>
-                <Text style={[styles.dockBadgeText, { color: session.processedCount > 0 ? bg : muted }]}>
-                  {session.processedCount}
-                </Text>
-              </View>
-              <Chevron direction="right" size={11} color={muted} />
-            </Pressable>
-          </Link>
         </View>
       </View>
 
@@ -613,7 +598,7 @@ export default function ClassifyScreen() {
         onCancel={() => setEmptyFinishVisible(false)}
       />
 
-      {/* 下滑查看：這張在系統哪些相簿裡 */}
+      {/* 查看：時間日期與系統相簿位置 */}
       <Modal visible={inspectVisible} animationType="slide" transparent onRequestClose={() => setInspectVisible(false)}>
         <Pressable style={styles.sheetBackdrop} onPress={() => setInspectVisible(false)}>
           <Pressable
@@ -621,7 +606,18 @@ export default function ClassifyScreen() {
             onPress={() => {}}>
             <View style={styles.sheetHandle} />
             <Text style={[styles.sheetTitle, { color: text }]}>{t('home.whichAlbums')}</Text>
-            <Text style={[styles.sheetSub, { color: muted }]}>{t('home.inspectHint')}</Text>
+            {currentItem?.creationTime ? (
+              <View style={[styles.inspectRow, { borderColor: border, backgroundColor: card }]}>
+                <Text style={[styles.inspectMetaLabel, { color: muted }]}>{t('home.inspectDate')}</Text>
+                <Text style={[styles.inspectText, { color: text }]}>
+                  {(() => {
+                    const d = new Date(currentItem.creationTime);
+                    const pad = (n: number) => String(n).padStart(2, '0');
+                    return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                  })()}
+                </Text>
+              </View>
+            ) : null}
             {inspectLoading ? (
               <Text style={[styles.sheetEmpty, { color: muted }]}>{t('common.reading')}</Text>
             ) : inspectAlbums.length === 0 ? (
@@ -641,11 +637,6 @@ export default function ClassifyScreen() {
           </Pressable>
         </Pressable>
       </Modal>
-
-      <SpotlightTutorial
-        visible={session.tutorialVisible}
-        onClose={() => session.setTutorialVisible(false)}
-      />
 
       <MilestoneAdModal
         visible={milestoneVisible}
@@ -809,6 +800,7 @@ const styles = StyleSheet.create({
   sheetSub: { fontSize: 12, marginBottom: 6 },
   sheetEmpty: { fontSize: 13, textAlign: 'center', paddingVertical: 16, lineHeight: 19 },
   inspectRow: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, marginBottom: 8 },
+  inspectMetaLabel: { fontSize: 11, fontWeight: '600', marginBottom: 2 },
   inspectText: { fontSize: 15 },
   sheetDone: { borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 6 },
   sheetDoneText: { fontSize: 15, fontWeight: '700' },

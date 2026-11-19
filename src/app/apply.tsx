@@ -50,8 +50,6 @@ export default function ApplyScreen() {
   // 之後 OS 還會有一次系統同意框（批次一次，無法移除，見下方說明）。
   const [trashDialog, setTrashDialog] = useState<null | { step: 'first' | 'second'; count: number }>(null);
   const trashResolver = useRef<((v: 'trash' | 'permanent' | 'skip') => void) | null>(null);
-  const [albumDialog, setAlbumDialog] = useState<null | { count: number; title: string | null; albumCount: number }>(null);
-  const albumResolver = useRef<((allowed: boolean) => void) | null>(null);
 
   const sessionId = session.sessionId;
 
@@ -86,25 +84,9 @@ export default function ApplyScreen() {
     trashResolver.current = null;
   }, []);
 
-  const requestAlbumConfirm = useCallback(
-    (count: number, title: string | null, albumCount: number): Promise<boolean> =>
-      new Promise((resolve) => {
-        albumResolver.current = resolve;
-        setAlbumDialog({ count, title, albumCount });
-      }),
-    [],
-  );
-
-  const resolveAlbum = useCallback((allowed: boolean) => {
-    setAlbumDialog(null);
-    albumResolver.current?.(allowed);
-    albumResolver.current = null;
-  }, []);
-
   useEffect(() => () => {
     cancelRef.current = true;
     trashResolver.current?.('skip'); trashResolver.current = null;
-    albumResolver.current?.(false); albumResolver.current = null;
   }, []);
 
   const handleStart = useCallback(async () => {
@@ -118,8 +100,6 @@ export default function ApplyScreen() {
         onProgress: setProgress,
         isCancelled: () => cancelRef.current,
         requestTrashConfirm,
-        albumConfirmMode: session.moveConfirmMode,
-        requestAlbumConfirm,
       });
       if (r.appliedTrash > 0 && rememberTrash.current) {
         try { await session.updateConfirmBeforeTrash(false); }
@@ -131,7 +111,7 @@ export default function ApplyScreen() {
     } finally {
       setBusy(false);
     }
-  }, [sessionId, busy, session, requestTrashConfirm, requestAlbumConfirm, refreshSummary]);
+  }, [sessionId, busy, session, requestTrashConfirm, refreshSummary]);
 
   const handleRetry = useCallback(() => {
     setResult(null);
@@ -143,7 +123,8 @@ export default function ApplyScreen() {
     try {
       await session.restartFresh();
     } finally {
-      router.replace('/');
+      if (router.canDismiss()) router.dismissAll();
+      else router.replace('/');
     }
   }, [session]);
 
@@ -199,18 +180,6 @@ export default function ApplyScreen() {
           <Text style={{ color: text, fontSize: 14 }}>{t('apply.confirmTrashDontAsk')}</Text>
         </Pressable>}
       </ConfirmDialog>
-      <ConfirmDialog
-        visible={stage === 'running' && albumDialog !== null}
-        title={t('apply.confirmAlbumTitle')}
-        message={
-          albumDialog?.title
-            ? t('apply.confirmAlbumMessageSingle', { count: albumDialog.count, title: albumDialog.title })
-            : t('apply.confirmAlbumMessageMulti', { count: albumDialog?.count ?? 0, albumCount: albumDialog?.albumCount ?? 0 })
-        }
-        confirmText={t('apply.confirmAlbumConfirm')}
-        onConfirm={() => resolveAlbum(true)}
-        onCancel={() => resolveAlbum(false)}
-      />
     </>
   );
 

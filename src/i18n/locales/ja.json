@@ -103,8 +103,8 @@
     "undo": "取り消す",
     "inspect": "確認",
     "results": "結果",
-    "whichAlbums": "この写真はどのアルバム?",
-    "inspectHint": "表示のみ。仕分けや移動はしません。",
+    "whichAlbums": "場所",
+    "inspectDate": "日時",
     "noAlbumInfo": "所属アルバムを取得できませんでした（「すべての写真」内か、システムが未報告の可能性）。"
   },
   "settings": {
@@ -113,16 +113,18 @@
       "down": "下スワイプ",
       "left": "左スワイプ",
       "right": "右スワイプ",
-      "actionAlbum": "上スワイプ先のアルバム",
-      "actionAlbumDesc": "ジェスチャー設定の上スワイプ先に移動",
+      "actionAlbum": "メイン仕分け先アルバム",
+      "actionAlbumDesc": "メインの仕分け先アルバムへ分類（上の「仕分け先アルバム」で設定）",
+      "actionAlbumDescWithName": "「{{album}}」へ分類（上の「仕分け先アルバム」で変更）",
       "actionTrash": "削除予定にマーク",
-      "actionTrashDesc": "ゴミ箱へ移動するようマーク",
+      "actionTrashDesc": "削除予定として記録し、確認後にゴミ箱へ移動",
       "actionSkip": "この写真をスキップ",
-      "actionSkipDesc": "何もせず次へ進む",
-      "actionInspect": "下スワイプ先のアルバム",
-      "actionInspectDesc": "ジェスチャー設定の下スワイプ先に移動",
-      "actionNone": "動作なし（オフ）",
-      "actionNoneDesc": "スワイプしても動作せず戻る"
+      "actionSkipDesc": "何もせず次の写真へ進む",
+      "actionInspect": "サブ仕分け先アルバム",
+      "actionInspectDesc": "サブの仕分け先アルバムへ分類（下部バーで切替可能）",
+      "actionInspectDescWithName": "「{{album}}」へ分類（下部バーで切替可能）",
+      "actionNone": "この方向を無効にする",
+      "actionNoneDesc": "スワイプしても動作せず元に戻る"
     },
     "theme": {
       "light": "ライト",
@@ -154,7 +156,7 @@
     "sortOldestToNewest": "古い順",
     "gestureSectionTitle": "ジェスチャー方向の設定",
     "classifyAlbumSection": "仕分け先アルバム",
-    "gestureHint": "方向をタップして動作を変更。⇄で2方向の動作を入れ替え",
+    "gestureHint": "方向をタップして動作を変更。他の方向で使用中の動作を選ぶと自動で入れ替わります。",
     "moveConfirmTitle": "移動の確認",
     "tutorialTitle": "チュートリアル",
     "retakeTutorial": "チュートリアルをもう一度見る",
@@ -167,6 +169,8 @@
     "versionLine": "バージョン {{version}}",
     "privacyLine": "完全オフラインの端末内整理。写真は外部に送信されません。",
     "pickerSuffix": "：動作を選択",
+    "pickerSubtitle": "この方向で実行する動作を選びます。他の方向で使用中の動作を選ぶと自動で入れ替わります。",
+    "swapOccupiedTag": "{{icon}} {{dir}}で使用中 · タップで入れ替え",
     "discardMessage": "{{title}} · 仕分け{{done}}枚"
   },
   "review": {

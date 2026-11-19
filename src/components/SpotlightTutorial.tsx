@@ -96,8 +96,10 @@ export function SpotlightTutorial({ visible, onClose }: Props) {
     onClose();
   };
 
+  if (!visible) return null;
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleSkip}>
+    <Modal visible={visible} transparent statusBarTranslucent animationType="fade" onRequestClose={handleSkip}>
       <View style={styles.backdrop}>
         <View
           style={[
@@ -163,7 +165,7 @@ export function SpotlightTutorial({ visible, onClose }: Props) {
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.68)',
+    backgroundColor: 'rgba(0,0,0,0.88)',
     justifyContent: 'center',
     paddingHorizontal: 16,
   },

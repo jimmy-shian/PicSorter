@@ -79,7 +79,8 @@ export default function ReviewScreen() {
   /** 已全部套用後開新工作：下次進檢查頁就是空的，不會殘留已刪除縮圖 */
   const handleStartFresh = useCallback(async () => {
     await session.restartFresh();
-    router.replace('/');
+    if (router.canDismiss()) router.dismissAll();
+    else router.replace('/');
   }, [session]);
 
   return (

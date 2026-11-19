@@ -103,8 +103,8 @@
     "undo": "되돌리기",
     "inspect": "확인",
     "results": "결과",
-    "whichAlbums": "이 사진은 어느 앨범에?",
-    "inspectHint": "보기 전용. 분류하거나 이동하지 않습니다.",
+    "whichAlbums": "위치",
+    "inspectDate": "날짜 및 시간",
     "noAlbumInfo": "소속 앨범을 찾을 수 없습니다 (\"모든 사진\"에 있거나 시스템이 보고하지 않은 경우)."
   },
   "settings": {
@@ -113,16 +113,18 @@
       "down": "아래로 스와이프",
       "left": "왼쪽으로 스와이프",
       "right": "오른쪽으로 스와이프",
-      "actionAlbum": "위로 스와이프 대상 앨범",
-      "actionAlbumDesc": "제스처 설정의 위로 스와이프 대상으로 이동",
+      "actionAlbum": "기본 대상 앨범",
+      "actionAlbumDesc": "기본 대상 앨범으로 분류 (위 '분류 대상 앨범'에서 지정)",
+      "actionAlbumDescWithName": "'{{album}}'(으)로 분류 (위 '분류 대상 앨범'에서 변경)",
       "actionTrash": "삭제 예정 표시",
-      "actionTrashDesc": "휴지통으로 이동하도록 표시",
+      "actionTrashDesc": "삭제 예정으로 표시하고 확인 후 휴지통으로 이동",
       "actionSkip": "이 사진 건너뛰기",
-      "actionSkipDesc": "처리하지 않고 다음으로 진행",
-      "actionInspect": "아래로 스와이프 대상 앨범",
-      "actionInspectDesc": "제스처 설정의 아래로 스와이프 대상으로 이동",
-      "actionNone": "동작 없음 (끄기)",
-      "actionNoneDesc": "스와이프해도 동작하지 않고 되돌아옴"
+      "actionSkipDesc": "처리하지 않고 다음 사진으로 이동",
+      "actionInspect": "보조 대상 앨범",
+      "actionInspectDesc": "보조 대상 앨범으로 분류 (하단 바에서 전환 가능)",
+      "actionInspectDescWithName": "'{{album}}'(으)로 분류 (하단 바에서 전환 가능)",
+      "actionNone": "이 방향 끄기",
+      "actionNoneDesc": "스와이프해도 동작하지 않고 제자리로 돌아옴"
     },
     "theme": {
       "light": "라이트",
@@ -154,7 +156,7 @@
     "sortOldestToNewest": "오래된 것부터",
     "gestureSectionTitle": "제스처 방향 설정",
     "classifyAlbumSection": "분류 대상 앨범",
-    "gestureHint": "방향을 탭하여 동작 변경; ⇄는 두 방향의 동작을 교체",
+    "gestureHint": "방향을 탭하여 동작을 변경하세요. 다른 방향에서 사용 중인 동작을 선택하면 자동으로 맞바뀝니다.",
     "moveConfirmTitle": "이동 확인",
     "tutorialTitle": "튜토리얼",
     "retakeTutorial": "튜토리얼 다시 보기",
@@ -167,6 +169,8 @@
     "versionLine": "버전 {{version}}",
     "privacyLine": "완전 오프라인 기기 내 정리. 사진은 전송되지 않습니다.",
     "pickerSuffix": ": 동작 선택",
+    "pickerSubtitle": "이 방향으로 스와이프할 때 실행할 동작을 선택하세요. 다른 방향에서 사용 중인 동작을 선택하면 서로 맞바뀝니다.",
+    "swapOccupiedTag": "{{icon}} {{dir}}에서 사용 중 · 탭하여 맞바꾸기",
     "discardMessage": "{{title}} · 분류 {{done}}장"
   },
   "review": {

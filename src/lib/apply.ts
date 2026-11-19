@@ -62,9 +62,6 @@ export interface RunApplyOptions {
    * - 'skip'：trash 全部保留未套用
    */
   requestTrashConfirm?: (count: number) => Promise<'trash' | 'permanent' | 'skip'>;
-  /** 相簿移動確認：可設定整批一次或每個相簿一次。 */
-  albumConfirmMode?: 'once' | 'each';
-  requestAlbumConfirm?: (count: number, albumTitle: string | null, albumCount: number) => Promise<boolean>;
 }
 
 function errText(e: unknown): string {
@@ -195,24 +192,9 @@ export async function runApplyPipeline(
   if (isCancelled()) return finish(db, sessionId, appliedAlbum, appliedTrash);
 
   // ── 2. 相簿分類：分組分批，先整批、失敗降級逐筆 ──
-  let albumConfirmAsked = false;
-  let albumConfirmAllowed = true;
   for (const [albumId, rows] of byAlbum) {
     const title = liveAlbums.get(albumId) ?? rows[0]?.target_album_title ?? albumId;
     let activeAlbumId = albumId;
-    if (opts.albumConfirmMode !== 'each' && !albumConfirmAllowed) continue;
-    if (opts.requestAlbumConfirm && (opts.albumConfirmMode === 'each' || !albumConfirmAsked)) {
-      const allowed = await opts.requestAlbumConfirm(
-        opts.albumConfirmMode === 'each' ? rows.length : albumRows.length,
-        opts.albumConfirmMode === 'each' ? title : null,
-        byAlbum.size,
-      );
-      albumConfirmAsked = true;
-      if (!allowed) {
-        albumConfirmAllowed = false;
-        continue;
-      }
-    }
     for (let i = 0; i < rows.length; i += ALBUM_BATCH_SIZE) {
       if (isCancelled()) return finish(db, sessionId, appliedAlbum, appliedTrash);
       const batch = rows.slice(i, i + ALBUM_BATCH_SIZE);

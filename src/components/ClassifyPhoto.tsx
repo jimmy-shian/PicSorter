@@ -152,7 +152,11 @@ export function ClassifyPhoto({
         retryLoad();
         return;
       }
-      await openSystemPhotoViewer(item.assetId, activeUri || item.uri, item.mediaType);
+      try {
+        await openSystemPhotoViewer(item.assetId, activeUri || item.uri, item.mediaType);
+      } catch (error) {
+        console.warn('Failed to open system photo viewer:', error);
+      }
     };
   }, [item, activeUri, retryLoad, stage]);
 
@@ -299,20 +303,48 @@ export function ClassifyPhoto({
     };
   });
 
-  const upHintStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(ty.value, [-85, -17], [1, 0], Extrapolation.CLAMP),
-    borderWidth: ty.value <= -85 ? 2 : 0,
-  }));
-  const rightHintStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(tx.value, [18, 90], [0, 1], Extrapolation.CLAMP),
-  }));
-  const leftHintStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(tx.value, [-90, -18], [1, 0], Extrapolation.CLAMP),
-  }));
-  const downHintStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(ty.value, [17, 85], [0, 1], Extrapolation.CLAMP),
-    borderWidth: ty.value >= 85 ? 2 : 0,
-  }));
+  const upHintStyle = useAnimatedStyle(() => {
+    const ax = Math.abs(tx.value);
+    const ay = Math.abs(ty.value);
+    const dominant = ty.value < 0 && ay > ax;
+    const baseOpacity = dominant ? interpolate(ty.value, [-85, -17], [1, 0], Extrapolation.CLAMP) : 0;
+    const diagonalFade = dominant ? interpolate(ay - ax, [0, 30], [0.45, 1], Extrapolation.CLAMP) : 0;
+    return {
+      opacity: baseOpacity * diagonalFade,
+      borderWidth: dominant && ty.value <= -85 ? 2 : 0,
+    };
+  });
+  const rightHintStyle = useAnimatedStyle(() => {
+    const ax = Math.abs(tx.value);
+    const ay = Math.abs(ty.value);
+    const dominant = tx.value > 0 && ax >= ay;
+    const baseOpacity = dominant ? interpolate(tx.value, [18, 90], [0, 1], Extrapolation.CLAMP) : 0;
+    const diagonalFade = dominant ? interpolate(ax - ay, [0, 30], [0.45, 1], Extrapolation.CLAMP) : 0;
+    return {
+      opacity: baseOpacity * diagonalFade,
+    };
+  });
+  const leftHintStyle = useAnimatedStyle(() => {
+    const ax = Math.abs(tx.value);
+    const ay = Math.abs(ty.value);
+    const dominant = tx.value < 0 && ax >= ay;
+    const baseOpacity = dominant ? interpolate(tx.value, [-90, -18], [1, 0], Extrapolation.CLAMP) : 0;
+    const diagonalFade = dominant ? interpolate(ax - ay, [0, 30], [0.45, 1], Extrapolation.CLAMP) : 0;
+    return {
+      opacity: baseOpacity * diagonalFade,
+    };
+  });
+  const downHintStyle = useAnimatedStyle(() => {
+    const ax = Math.abs(tx.value);
+    const ay = Math.abs(ty.value);
+    const dominant = ty.value > 0 && ay > ax;
+    const baseOpacity = dominant ? interpolate(ty.value, [17, 85], [0, 1], Extrapolation.CLAMP) : 0;
+    const diagonalFade = dominant ? interpolate(ay - ax, [0, 30], [0.45, 1], Extrapolation.CLAMP) : 0;
+    return {
+      opacity: baseOpacity * diagonalFade,
+      borderWidth: dominant && ty.value >= 85 ? 2 : 0,
+    };
+  });
 
   if (!item) {
     return (

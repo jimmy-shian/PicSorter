@@ -103,8 +103,8 @@
     "undo": "撤銷",
     "inspect": "查看",
     "results": "結果",
-    "whichAlbums": "這張在哪些相簿",
-    "inspectHint": "只供查看，不會分類或移動相片與影片",
+    "whichAlbums": "位置",
+    "inspectDate": "時間日期",
     "noAlbumInfo": "查不到所屬相簿（可能在「所有相片與影片」或系統未回報）。"
   },
   "settings": {
@@ -113,16 +113,18 @@
       "down": "向下滑動",
       "left": "向左滑動",
       "right": "向右滑動",
-      "actionAlbum": "上滑目標相簿",
-      "actionAlbumDesc": "放入「分類手勢」設定的上滑目標",
+      "actionAlbum": "放入主要相簿",
+      "actionAlbumDesc": "分類至主要目標相簿（可在上方「分類相簿」指定）",
+      "actionAlbumDescWithName": "分類至「{{album}}」（可在上方「分類相簿」更改）",
       "actionTrash": "標記待刪除",
-      "actionTrashDesc": "標記移入垃圾桶",
+      "actionTrashDesc": "標記為待刪除，檢查後再統一移入垃圾桶",
       "actionSkip": "略過此張",
-      "actionSkipDesc": "不作處理，前進下一張",
-      "actionInspect": "下滑目標相簿",
-      "actionInspectDesc": "放入「分類手勢」設定的下滑目標",
-      "actionNone": "無動作 (關閉)",
-      "actionNoneDesc": "滑動不執行動作，彈回"
+      "actionSkipDesc": "暫不處理，直接跳至下一張",
+      "actionInspect": "放入次要相簿",
+      "actionInspectDesc": "分類至次要目標相簿（可在底部相簿列切換）",
+      "actionInspectDescWithName": "分類至「{{album}}」（可在底部相簿列切換）",
+      "actionNone": "停用此方向",
+      "actionNoneDesc": "滑動時不執行任何動作，卡片彈回"
     },
     "theme": {
       "light": "淺色",
@@ -154,7 +156,7 @@
     "sortOldestToNewest": "最舊至最新",
     "gestureSectionTitle": "手勢方向設定",
     "classifyAlbumSection": "分類相簿",
-    "gestureHint": "點選方向更換動作；⇄ 表示交換兩個方向的動作",
+    "gestureHint": "點選方向可更換對應動作；選取其他方向使用中的動作時會自動互換。",
     "moveConfirmTitle": "移動確認",
     "tutorialTitle": "操作教學",
     "retakeTutorial": "重看新手教學",
@@ -167,6 +169,8 @@
     "versionLine": "版本 {{version}}",
     "privacyLine": "純本機離線整理，照片不上傳、不佔用額外空間。",
     "pickerSuffix": "：選擇動作",
+    "pickerSubtitle": "選擇此方向要執行的動作；若選取其他方向使用中的動作，兩者會自動互換。",
+    "swapOccupiedTag": "目前用於 {{icon}} {{dir}} · 點選將互換",
     "discardMessage": "{{title}} · 已分 {{done}} 張"
   },
   "review": {

@@ -15,7 +15,6 @@ import type {
   GestureAction,
   GestureDirection,
   GestureSettings,
-  MoveConfirmMode,
   SortOrder,
   SourceAlbum,
   TargetAlbum,
@@ -43,8 +42,6 @@ export interface RunApplyOpts {
   onProgress?: (p: ApplyProgress) => void;
   isCancelled?: () => boolean;
   requestTrashConfirm?: (count: number) => Promise<'trash' | 'permanent' | 'skip'>;
-  albumConfirmMode?: 'once' | 'each';
-  requestAlbumConfirm?: (count: number, albumTitle: string | null, albumCount: number) => Promise<boolean>;
 }
 
 export interface Decision {
@@ -140,8 +137,6 @@ interface SessionState {
   updateGestureSetting: (dir: GestureDirection, action: GestureAction) => Promise<void>;
   confirmBeforeTrash: boolean;
   updateConfirmBeforeTrash: (value: boolean) => Promise<void>;
-  moveConfirmMode: MoveConfirmMode;
-  updateMoveConfirmMode: (mode: MoveConfirmMode) => Promise<void>;
   showAllAlbums: boolean;
   setShowAllAlbums: (b: boolean) => Promise<void>;
   tutorialVisible: boolean;
@@ -221,7 +216,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // 偏好設定與教學
   const [gestureSettings, setGestureSettings] = useState<GestureSettings>(DEFAULT_GESTURES);
   const [confirmBeforeTrash, setConfirmBeforeTrash] = useState(true);
-  const [moveConfirmMode, setMoveConfirmMode] = useState<MoveConfirmMode>('once');
   const [showAllAlbums, setShowAllAlbumsState] = useState(true);
   const [tutorialVisible, setTutorialVisible] = useState(false);
 
@@ -235,8 +229,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setGestureSettings({ up, down, left, right });
 
         setConfirmBeforeTrash((await getPref(db, 'confirmBeforeTrash', 'true')) !== 'false');
-        const confirmMode = (await getPref(db, 'move_confirm_mode', 'once')) as MoveConfirmMode;
-        setMoveConfirmMode(confirmMode === 'each' ? 'each' : 'once');
 
         const showAll = (await getPref(db, 'show_all_albums', 'true')) === 'true';
         setShowAllAlbumsState(showAll);
@@ -257,14 +249,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     async (dir: GestureDirection, action: GestureAction) => {
       setGestureSettings((prev) => ({ ...prev, [dir]: action }));
       await setPref(db, `gesture_${dir}`, action);
-    },
-    [db],
-  );
-
-  const updateMoveConfirmMode = useCallback(
-    async (mode: MoveConfirmMode) => {
-      setMoveConfirmMode(mode);
-      await setPref(db, 'move_confirm_mode', mode);
     },
     [db],
   );
@@ -1060,8 +1044,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       updateGestureSetting,
       confirmBeforeTrash,
       updateConfirmBeforeTrash,
-      moveConfirmMode,
-      updateMoveConfirmMode,
       showAllAlbums,
       setShowAllAlbums,
       tutorialVisible,
@@ -1116,8 +1098,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     updateGestureSetting,
     confirmBeforeTrash,
     updateConfirmBeforeTrash,
-    moveConfirmMode,
-    updateMoveConfirmMode,
     showAllAlbums,
     setShowAllAlbums,
     tutorialVisible,
